@@ -38,3 +38,8 @@ setup() {
     run grep -nE '^ +run:.*\$\{\{' "$WF"
     [ "$status" -ne 0 ]
 }
+
+@test "socle ref is overridable so the socle can test itself" {
+    grep -q "socle-ref:" "$WF"
+    grep -q 'ref: ${{ inputs.socle-ref }}' "$WF"
+}
