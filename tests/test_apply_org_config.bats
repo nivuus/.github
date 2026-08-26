@@ -115,3 +115,10 @@ STUB
     run "$SCRIPTS/apply-org-config.sh" nivuus/shell --bogus
     [ "$status" -eq 2 ]
 }
+
+@test "makes the squash commit title come from the PR title" {
+    export GH_VISIBILITY=public
+    run "$SCRIPTS/apply-org-config.sh" nivuus/shell
+    [ "$status" -eq 0 ]
+    grep -q "squash_merge_commit_title=PR_TITLE" "$GH_LOG"
+}

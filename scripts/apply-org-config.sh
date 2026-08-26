@@ -31,7 +31,9 @@ apply_merge_strategy() {
         -F delete_branch_on_merge=true \
         -F allow_squash_merge=true \
         -F allow_merge_commit=false \
-        -F allow_rebase_merge=false
+        -F allow_rebase_merge=false \
+        -f squash_merge_commit_title=PR_TITLE \
+        -f squash_merge_commit_message=COMMIT_MESSAGES
 }
 
 apply_secret_scanning() {

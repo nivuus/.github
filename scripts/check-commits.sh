@@ -21,23 +21,35 @@ subject_is_french() {
     return 0
 }
 
+check_subject() {
+    local subject="$1"
+
+    if ! [[ "$subject" =~ $SUBJECT_RE ]]; then
+        printf 'Not a conventional commit: %s\n' "$subject"
+        return 1
+    fi
+
+    if subject_is_french "${subject#*: }"; then
+        printf 'Commit subject must be in English: %s\n' "$subject"
+        return 1
+    fi
+
+    return 0
+}
+
 main() {
+    if [ "${1:-}" = "--subject" ]; then
+        shift
+        check_subject "${1:-}" && return 0
+        return 1
+    fi
+
     local base="${1:-origin/main}" head="${2:-HEAD}"
     local subject failed=0
 
     while IFS= read -r subject; do
         [ -n "$subject" ] || continue
-
-        if ! [[ "$subject" =~ $SUBJECT_RE ]]; then
-            printf 'Not a conventional commit: %s\n' "$subject"
-            failed=1
-            continue
-        fi
-
-        if subject_is_french "${subject#*: }"; then
-            printf 'Commit subject must be in English: %s\n' "$subject"
-            failed=1
-        fi
+        check_subject "$subject" || failed=1
     done < <(git log --no-merges --format='%s' "${base}..${head}")
 
     if [ "$failed" -eq 1 ]; then

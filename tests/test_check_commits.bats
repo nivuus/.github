@@ -61,3 +61,18 @@ setup() {
     run "$SCRIPTS/check-commits.sh" main HEAD
     [ "$status" -eq 0 ]
 }
+
+@test "validates a single subject in --subject mode" {
+    run "$SCRIPTS/check-commits.sh" --subject "feat: add stock endpoint"
+    [ "$status" -eq 0 ]
+}
+
+@test "rejects a bad single subject in --subject mode" {
+    run "$SCRIPTS/check-commits.sh" --subject "added an endpoint"
+    [ "$status" -eq 1 ]
+}
+
+@test "rejects a French single subject in --subject mode" {
+    run "$SCRIPTS/check-commits.sh" --subject "feat: ajouter le stock"
+    [ "$status" -eq 1 ]
+}
