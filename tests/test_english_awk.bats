@@ -117,3 +117,21 @@ scan() {
     run scan py a.py
     [ "$status" -eq 0 ]
 }
+
+@test "rejects a French docstring in triple single quotes" {
+    printf "def f():\n    '''Vérifie le stock.'''\n    pass\n" > a.py
+    run scan py a.py
+    [ "$status" -eq 1 ]
+}
+
+@test "rejects a French multi-line docstring in triple single quotes" {
+    printf "def f():\n    '''\n    Vérifie le stock disponible.\n    '''\n    pass\n" > a.py
+    run scan py a.py
+    [ "$status" -eq 1 ]
+}
+
+@test "accepts an English docstring in triple single quotes" {
+    printf "def f():\n    '''Return the current stock level.'''\n    pass\n" > a.py
+    run scan py a.py
+    [ "$status" -eq 0 ]
+}

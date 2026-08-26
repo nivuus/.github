@@ -10,6 +10,7 @@ BEGIN {
     close(words)
     accented = "[éèêëàâäîïôöùûüÿçœæÉÈÊËÀÂÄÎÏÔÖÙÛÜŸÇŒÆ]"
     indoc = 0
+    docdelim = ""
     found = 0
 }
 
@@ -59,16 +60,22 @@ function is_french(text,    spaced, lower, i, nw, parts) {
     # Python docstrings are handled before blanking, which would erase them.
     if (lang == "py") {
         copy = $0
-        delims = gsub(/"""/, "", copy)
         if (indoc) {
-            if (delims % 2 == 1) indoc = 0
+            # Only the delimiter that opened the docstring can close it, so
+            # a `'''` cannot close a `"""` block or vice versa.
+            n = (docdelim == "\"\"\"") ? gsub(/"""/, "", copy) : gsub(/'''/, "", copy)
+            if (n % 2 == 1) { indoc = 0; docdelim = "" }
             # A docstring is prose a reviewer can read, so the marker is
             # honoured on the raw line, unlike the string-blanked case below.
             if ($0 !~ /policy:[[:space:]]*allow-fr/ && is_french($0)) report(FNR, $0)
             next
         }
-        if (delims % 2 == 1) indoc = 1
-        if (delims > 0) {
+        dq = gsub(/"""/, "", copy)
+        copy = $0
+        sq = gsub(/'''/, "", copy)
+        if (dq % 2 == 1) { indoc = 1; docdelim = "\"\"\"" }
+        else if (sq % 2 == 1) { indoc = 1; docdelim = "'''" }
+        if (dq > 0 || sq > 0) {
             if ($0 !~ /policy:[[:space:]]*allow-fr/ && is_french($0)) report(FNR, $0)
             next
         }
