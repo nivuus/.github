@@ -33,7 +33,6 @@ dossier
 dossiers
 ecrire
 ecrit
-efface
 effacer
 elles
 enregistre
@@ -46,7 +45,6 @@ essais
 fichier
 fichiers
 fonction
-initialise
 initialiser
 lancer
 lecture
@@ -91,13 +89,11 @@ selon
 seulement
 sinon
 sortie
-sorties
 sous
 suivant
 supprime
 supprimer
 tableau
-tableaux
 taille
 tailles
 toujours
@@ -105,12 +101,10 @@ tous
 toutes
 utilisateur
 utilisateurs
-utilise
 utiliser
 valeur
 valeurs
 verification
 verifie
 verifier
-vide
 vider
