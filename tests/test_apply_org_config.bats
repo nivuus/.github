@@ -87,3 +87,31 @@ teardown() {
     [ "$status" -eq 0 ]
     grep -q "private-vulnerability-reporting" "$GH_LOG"
 }
+
+@test "propagates a failed visibility lookup instead of guessing" {
+    cat > gh <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$GH_LOG"
+if [ "$*" = "${GH_VISIBILITY_QUERY}" ]; then
+    exit 1
+fi
+exit 0
+STUB
+    chmod +x gh
+    run "$SCRIPTS/apply-org-config.sh" nivuus/shell
+    [ "$status" -ne 0 ]
+    run grep -c "branches/main/protection" "$GH_LOG"
+    [ "$output" = "0" ]
+}
+
+@test "dry-run after the repository argument still performs no write call" {
+    run "$SCRIPTS/apply-org-config.sh" nivuus/shell --dry-run
+    [ "$status" -eq 0 ]
+    run grep -c "PUT\|PATCH" "$GH_LOG"
+    [ "$output" = "0" ]
+}
+
+@test "rejects an unknown option after a repository name" {
+    run "$SCRIPTS/apply-org-config.sh" nivuus/shell --bogus
+    [ "$status" -eq 2 ]
+}

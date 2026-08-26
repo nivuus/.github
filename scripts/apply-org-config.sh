@@ -85,7 +85,11 @@ apply_repo() {
     local repo="$1" vis rc=0
 
     printf '\n== %s ==\n' "$repo"
-    vis="$(visibility_of "$repo")" || vis="unknown"
+
+    if ! vis="$(visibility_of "$repo")"; then
+        printf 'ERROR: %s: visibility lookup failed; repository left unconfigured.\n' "$repo"
+        return 1
+    fi
 
     apply_merge_strategy "$repo" || rc=1
     apply_dependabot "$repo" || rc=1
@@ -95,7 +99,7 @@ apply_repo() {
         apply_private_reporting "$repo" || rc=1
         apply_branch_protection "$repo" || rc=1
     else
-        printf 'WARNING: %s is %s. Branch protection and secret scanning need a paid plan; skipping.\n' \
+        printf 'WARNING: %s is %s. Branch protection, secret scanning and private vulnerability reporting need a paid plan; skipping.\n' \
             "$repo" "$vis"
     fi
 
@@ -104,20 +108,22 @@ apply_repo() {
 
 main() {
     local rc=0 repo
+    local -a repos=()
 
-    while [ "$#" -gt 0 ] && [ "${1:0:2}" = "--" ]; do
+    while [ "$#" -gt 0 ]; do
         case "$1" in
             --dry-run) DRY_RUN=1; shift ;;
-            *) printf 'Unknown option: %s\n' "$1"; return 2 ;;
+            --*) printf 'Unknown option: %s\n' "$1"; return 2 ;;
+            *) repos+=("$1"); shift ;;
         esac
     done
 
-    if [ "$#" -eq 0 ]; then
+    if [ "${#repos[@]}" -eq 0 ]; then
         printf 'Usage: apply-org-config.sh [--dry-run] <owner/repo>...\n'
         return 2
     fi
 
-    for repo in "$@"; do
+    for repo in "${repos[@]}"; do
         apply_repo "$repo" || rc=1
     done
 
