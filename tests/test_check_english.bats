@@ -55,3 +55,15 @@ teardown() {
     [[ "$output" == *"a.py"* ]]
     [[ "$output" == *"b.ts"* ]]
 }
+
+@test "honours the file-level escape hatch" {
+    printf '# policy: allow-fr-file\ncat <<EOF\nStock insuffisant, réessayez\nEOF\n' > ui.sh
+    run bash -c "echo ui.sh | '$SCRIPTS/check-english.sh'"
+    [ "$status" -eq 0 ]
+}
+
+@test "flags a French heredoc without the file-level hatch" {
+    printf 'cat <<EOF\nStock insuffisant, réessayez\nEOF\n' > ui.sh
+    run bash -c "echo ui.sh | '$SCRIPTS/check-english.sh'"
+    [ "$status" -eq 1 ]
+}

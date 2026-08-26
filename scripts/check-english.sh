@@ -18,6 +18,7 @@ main() {
         [ -f "$path" ] || continue
         is_generated_path "$path" && continue
         is_test_path "$path" && continue
+        grep -q 'policy: allow-fr-file' "$path" && continue
         lang="$(dialect_of "$path")" || continue
 
         if ! out="$(gawk -v lang="$lang" -v words="$WORDS" -f "$ENGINE" "$path")"; then
