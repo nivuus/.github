@@ -1,0 +1,45 @@
+name: Security
+
+on:
+  workflow_call:
+
+jobs:
+  security:
+    name: Secrets and dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Audit Python dependencies
+        run: |
+          if [ -f requirements.txt ] || [ -f pyproject.toml ]; then
+            pipx install pip-audit
+            pip-audit --strict || exit 1
+          else
+            echo "No Python manifest, skipping."
+          fi
+
+      - name: Audit Rust dependencies
+        run: |
+          if [ -f Cargo.lock ]; then
+            cargo install cargo-audit --locked
+            cargo audit
+          else
+            echo "No Cargo.lock, skipping."
+          fi
+
+      - name: Audit Node dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high
+          else
+            echo "No package-lock.json, skipping."
+          fi
