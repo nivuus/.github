@@ -122,3 +122,15 @@ STUB
     [ "$status" -eq 0 ]
     grep -q "squash_merge_commit_title=PR_TITLE" "$GH_LOG"
 }
+
+# If these drift apart, branch protection waits on a check that never arrives
+# and no pull request can merge anywhere in the organisation.
+@test "required check contexts match the workflow job names" {
+    local root="${BATS_TEST_DIRNAME}/.."
+    grep -q 'CHECK_POLICY="policy / Coding rules"' "$root/scripts/apply-org-config.sh"
+    grep -qE '^  policy:' "$root/.github/workflows/policy.yml"
+    grep -q 'name: Coding rules' "$root/.github/workflows/policy.yml"
+    grep -q 'CHECK_SECURITY="security / Secrets and dependencies"' "$root/scripts/apply-org-config.sh"
+    grep -qE '^  security:' "$root/.github/workflows/security.yml"
+    grep -q 'name: Secrets and dependencies' "$root/.github/workflows/security.yml"
+}
