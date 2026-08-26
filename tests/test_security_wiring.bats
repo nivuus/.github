@@ -31,3 +31,13 @@ setup() {
     grep -q "Cargo.lock" "$WF"
     grep -q "package-lock.json" "$WF"
 }
+
+# gitleaks-action v2 requires a paid licence for organization accounts, and
+# nivuus is one. The gitleaks CLI is MIT-licensed and needs no licence, so the
+# workflow installs the binary instead. Do not "modernise" this back to the
+# action.
+@test "installs the gitleaks binary rather than the licensed action" {
+    run grep -q "gitleaks/gitleaks-action" "$WF"
+    [ "$status" -ne 0 ]
+    grep -q "releases/download" "$WF"
+}
