@@ -48,3 +48,29 @@ setup() {
     [ "$status" -eq 0 ]
     [ "$output" = "" ]
 }
+
+@test "lists a renamed file under its new name" {
+    commit_file "src/old.py" "x = 1"
+    git checkout -q -b feature
+    git mv "src/old.py" "src/new.py"
+    printf 'x = 2\n' >> "src/new.py"
+    git commit -q -am "refactor: rename module"
+
+    run bash -c "source '$SCRIPTS/lib/changed-files.sh'; changed_files main HEAD"
+
+    [ "$status" -eq 0 ]
+    [ "$output" = "src/new.py" ]
+}
+
+@test "lists a copied file" {
+    commit_file "src/a.py" "x = 1"
+    git checkout -q -b feature
+    cp "src/a.py" "src/b.py"
+    git add "src/b.py"
+    git commit -q -m "feat: add a second module"
+
+    run bash -c "source '$SCRIPTS/lib/changed-files.sh'; changed_files main HEAD"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"src/b.py"* ]]
+}
