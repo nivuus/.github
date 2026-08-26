@@ -1,0 +1,54 @@
+name: CI Shell
+
+on:
+  workflow_call:
+    inputs:
+      test-dirs:
+        description: Space-separated bats directories to run
+        type: string
+        default: tests/unit tests/performance
+      shellcheck-paths:
+        description: Root directory to scan with shellcheck
+        type: string
+        default: "."
+
+jobs:
+  shell:
+    name: Shell checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh bats shellcheck
+
+      - name: Run shellcheck
+        env:
+          SHELLCHECK_PATHS: ${{ inputs.shellcheck-paths }}
+        run: |
+          mapfile -t files < <(
+            find "$SHELLCHECK_PATHS" \
+              -path ./.git -prune -o \
+              -type f \( -name '*.sh' -o -name '*.bash' \) -print
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No shell scripts found, skipping."
+            exit 0
+          fi
+          shellcheck -S warning "${files[@]}"
+
+      - name: Run bats suites
+        env:
+          NIVUUS_SHELL_DIR: ${{ github.workspace }}
+          TEST_DIRS: ${{ inputs.test-dirs }}
+        run: |
+          for dir in $TEST_DIRS; do
+            if [ -d "$dir" ]; then
+              echo "Running $dir"
+              bats "$dir"
+            else
+              echo "No $dir, skipping."
+            fi
+          done
