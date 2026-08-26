@@ -48,3 +48,10 @@ setup() {
     [ "$status" -ne 0 ]
     grep -q "releases/download" "$WF"
 }
+
+# A push can carry several commits; scanning only the tip misses a secret
+# introduced earlier in the same push. github.event.before is the ref
+# before the push and covers the whole range.
+@test "scans the whole push range, not just the tip commit" {
+    grep -q "github.event.before" "$WF"
+}
