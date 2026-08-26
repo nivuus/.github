@@ -3,9 +3,10 @@
 ## Workflow
 
 La branche principale s'appelle `main` et n'accepte aucun push direct.
-Toute modification passe par une pull request dont les checks `policy` et
-`security` doivent être verts. Le merge se fait en squash, et la branche est
-supprimée automatiquement.
+Toute modification passe par une pull request dont les checks
+`policy / Coding rules` et `security / Secrets and dependencies` doivent être
+verts. Le merge se fait en squash, et la branche est supprimée
+automatiquement.
 
 ## Règles de codage
 
