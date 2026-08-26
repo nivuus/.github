@@ -97,11 +97,11 @@ scan() {
 }
 
 # Known blind spot: a French comment with no accent and no listed word is not
-# detected. Padding the word list with English homographs would cost more in
-# false positives than it buys. Task 15 measures how often this occurs on real
-# code; if it is frequent, the heuristic changes and this test changes with it.
+# detected. The list covers common vocabulary, not the whole language. Task 15
+# measures how often this occurs on real code; if it is frequent, the
+# heuristic changes and this test changes with it.
 @test "does not detect unaccented French outside the word list" {
-    printf '# Calcule le niveau de stock total\nx = 1\n' > a.py
+    printf '# Boucle sur les items entrants\nx = 1\n' > a.py
     run scan py a.py
     [ "$status" -eq 0 ]
 }
