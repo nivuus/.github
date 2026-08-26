@@ -105,3 +105,15 @@ scan() {
     run scan py a.py
     [ "$status" -eq 0 ]
 }
+
+@test "ignores an allow-fr marker inside a string literal" {
+    printf 'print("policy: allow-fr")  # Vérifie le stock\nx = 1\n' > a.py
+    run scan py a.py
+    [ "$status" -eq 1 ]
+}
+
+@test "still honours the marker followed by a reason" {
+    printf '# Nom de la société Vérifie  # policy: allow-fr raison métier\nx = 1\n' > a.py
+    run scan py a.py
+    [ "$status" -eq 0 ]
+}

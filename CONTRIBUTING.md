@@ -17,7 +17,9 @@ restent en français.
 
 Si une ligne déclenche à tort le contrôle — un nom propre, un terme métier
 français sans équivalent, un identifiant de protocole — ajoutez
-`policy: allow-fr` en fin de ligne.
+`policy: allow-fr` dans un commentaire. Un marqueur placé dans une chaîne de
+caractères n'a aucun effet : il doit apparaître en dehors de toute donnée
+pour rester une exemption visible et relisable.
 
 Pour un fichier entier — typiquement un fichier qui ne contient que des
 messages destinés à l'utilisateur, ou un texte multiligne que le marqueur de

@@ -55,8 +55,6 @@ function is_french(text,    spaced, lower, i, nw, parts) {
     return 0
 }
 
-/policy:[[:space:]]*allow-fr/ { next }
-
 {
     # Python docstrings are handled before blanking, which would erase them.
     if (lang == "py") {
@@ -64,17 +62,24 @@ function is_french(text,    spaced, lower, i, nw, parts) {
         delims = gsub(/"""/, "", copy)
         if (indoc) {
             if (delims % 2 == 1) indoc = 0
-            if (is_french($0)) report(FNR, $0)
+            # A docstring is prose a reviewer can read, so the marker is
+            # honoured on the raw line, unlike the string-blanked case below.
+            if ($0 !~ /policy:[[:space:]]*allow-fr/ && is_french($0)) report(FNR, $0)
             next
         }
         if (delims % 2 == 1) indoc = 1
         if (delims > 0) {
-            if (is_french($0)) report(FNR, $0)
+            if ($0 !~ /policy:[[:space:]]*allow-fr/ && is_french($0)) report(FNR, $0)
             next
         }
     }
 
     blanked = blank_strings($0)
+
+    # The marker only counts outside string literals: a marker sitting in
+    # data would silently disable the check for the code beside it.
+    if (blanked ~ /policy:[[:space:]]*allow-fr/) next
+
     idx = index(blanked, marker())
 
     if (idx > 0) {
