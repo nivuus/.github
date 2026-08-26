@@ -32,6 +32,13 @@ setup() {
     grep -q "package-lock.json" "$WF"
 }
 
+# A full-history scan would turn CI permanently red on any repository that
+# already contains a secret, blocking every merge. The gate detects NEW
+# secrets; auditing history is a one-off operation done before rollout.
+@test "scopes the secret scan to the change under review" {
+    grep -q "log-opts" "$WF"
+}
+
 # gitleaks-action v2 requires a paid licence for organization accounts, and
 # nivuus is one. The gitleaks CLI is MIT-licensed and needs no licence, so the
 # workflow installs the binary instead. Do not "modernise" this back to the

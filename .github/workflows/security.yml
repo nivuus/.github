@@ -16,12 +16,19 @@ jobs:
       - name: Scan for secrets
         env:
           GITLEAKS_VERSION: 8.30.1
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           curl -sSfL \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C /usr/local/bin gitleaks
+            | sudo tar -xz -C /usr/local/bin gitleaks
           gitleaks version
-          gitleaks git --no-banner --redact --exit-code 1 .
+          if [ -n "$BASE_SHA" ]; then
+            gitleaks git --no-banner --redact --exit-code 1 \
+              --log-opts="${BASE_SHA}..${HEAD_SHA}" .
+          else
+            gitleaks git --no-banner --redact --exit-code 1 --log-opts="-1" .
+          fi
 
       - name: Audit Python dependencies
         run: |
