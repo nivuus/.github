@@ -28,8 +28,9 @@ main() {
     done
 
     if [ "$failed" -eq 1 ]; then
-        printf '\nCode must be written in English. User-facing strings stay in French.\n'
-        printf 'Add "policy: allow-fr" at the end of a line to allow a legitimate exception.\n'
+        printf '\nCode must be written in English. A single-line French user-facing string is allowed as is.\n'
+        printf 'Put "policy: allow-fr" in a comment on the offending line for a legitimate exception; it has no effect inside a string.\n'
+        printf 'Put "policy: allow-fr-file" anywhere in the file to exempt it entirely, for multi-line user-facing text such as a heredoc.\n'
     fi
 
     return "$failed"
