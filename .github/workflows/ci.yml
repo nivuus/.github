@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  policy:
+    uses: ./.github/workflows/policy.yml
+    with:
+      socle-ref: ${{ github.sha }}
+  security:
+    uses: ./.github/workflows/security.yml

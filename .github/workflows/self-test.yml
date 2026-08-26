@@ -1,0 +1,21 @@
+name: Self test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  bats:
+    name: Socle test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats gawk shellcheck
+      - name: Run shellcheck on the socle scripts
+        run: shellcheck -S warning scripts/*.sh scripts/lib/*.sh
+      - name: Run the test suite
+        run: bats tests/
