@@ -46,3 +46,11 @@ CHANGELOG et le calcul de version, il est donc bloquant.
 Les contrôles ne s'appliquent qu'aux fichiers ajoutés ou modifiés dans la
 pull request. Le code existant qui ne respecte pas encore ces règles n'est
 pas signalé tant qu'on n'y touche pas.
+
+Cette portée n'est pas uniforme : la règle d'anglais regarde les lignes que
+vous ajoutez ou modifiez, ligne par ligne, et laisse tranquille le reste d'un
+fichier ancien qu'un commit ne fait qu'effleurer. La règle des 500 lignes
+regarde le fichier entier, parce qu'une longueur ne se mesure pas ligne par
+ligne : toucher une seule ligne d'un vieux fichier trop long l'expose donc à
+la limite, avec `policy: allow-long-file` comme échappatoire si ce n'est pas
+le moment de le découper.

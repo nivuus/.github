@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+load helpers/repo
+
 setup() {
     SCRIPTS="${BATS_TEST_DIRNAME}/../scripts"
     WORK="$(mktemp -d)"
@@ -8,6 +10,8 @@ setup() {
 
 teardown() {
     [ -n "${WORK:-}" ] && rm -rf "$WORK"
+    [ -n "${REPO:-}" ] && rm -rf "$REPO"
+    true
 }
 
 @test "accepts English source" {
@@ -65,5 +69,38 @@ teardown() {
 @test "flags a French heredoc without the file-level hatch" {
     printf 'cat <<EOF\nStock insuffisant, réessayez\nEOF\n' > ui.sh
     run bash -c "echo ui.sh | '$SCRIPTS/check-english.sh'"
+    [ "$status" -eq 1 ]
+}
+
+@test "in added-only mode, ignores French already in the file" {
+    make_repo
+    commit_file "app.py" "# Vérifie le stock"
+    git checkout -q -b feature
+    printf 'x = 1\n' >> app.py
+    git commit -q -am "chore: append a line"
+
+    run bash -c "echo app.py | '$SCRIPTS/check-english.sh' --added-only main HEAD"
+
+    [ "$status" -eq 0 ]
+}
+
+@test "in added-only mode, still flags French on an added line" {
+    make_repo
+    commit_file "app.py" "x = 1"
+    git checkout -q -b feature
+    printf '# Vérifie le stock\n' >> app.py
+    git commit -q -am "chore: append a comment"
+
+    run bash -c "echo app.py | '$SCRIPTS/check-english.sh' --added-only main HEAD"
+
+    [ "$status" -eq 1 ]
+}
+
+@test "without the option, the whole file is still checked" {
+    make_repo
+    commit_file "app.py" "# Vérifie le stock"
+
+    run bash -c "echo app.py | '$SCRIPTS/check-english.sh'"
+
     [ "$status" -eq 1 ]
 }
