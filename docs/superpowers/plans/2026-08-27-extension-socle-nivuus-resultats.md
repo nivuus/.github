@@ -61,6 +61,7 @@ défaut :
 | Allowlist gitleaks | le socle attrapait sa propre documentation |
 | Seuil `cargo audit` | une crate non maintenue bloquait un merge |
 | `python-version` sur l'audit | `pip-audit` ne résolvait pas un manifeste exigeant 3.14 |
+| `pip-audit` hors `pipx` | `pipx` ignorait l'interpréteur choisi, annulant la correction précédente |
 
 Trois de ces corrections partagent la même forme : le socle imposait un défaut
 qu'un dépôt ne pouvait pas utiliser. La réponse a chaque fois été d'exposer
@@ -99,6 +100,13 @@ surestime la couverture sur ce point.
 écrasé `git blame` sur la majeure partie du code Rust ; la dette est suivie en
 issue `nivuus/desk#2`.
 
+**Deux jobs privés restent rouges, délibérément.** Le job `rust` de `desk`
+(formatage) et les jobs `python` et `security` de `home-stock` (dépendances
+optionnelles de Home Assistant, et trois vulnérabilités dans `cryptography`
+tirée transitivement). Ces trois dépôts étant privés, le plan Free interdit la
+protection de branche : ces échecs ne bloquent aucun merge, et rendent la dette
+visible, ce qui était le but.
+
 **`desk` porte 46 détections gitleaks dans son historique**, relevées lors de
 l'audit du 27 août : des journaux de sessions d'authentification, dont deux JWT
 à haute entropie. Le dépôt est privé, l'exposition limitée aux collaborateurs.
@@ -112,6 +120,7 @@ propriétaire.
 | shell | #5 benchmark en CI · #6 `manifest.sh` · #7 commentaires français · #8 structure des tests e2e |
 | installer | #3 douze fichiers `test_*` inexécutables |
 | desk | #2 formatage Rust · #3 code JavaScript mort |
+| home-stock | #2 dépendances optionnelles de Home Assistant · #3 vulnérabilités `cryptography` |
 
 ## Pour un nouveau dépôt
 
