@@ -71,3 +71,10 @@ setup() {
     grep -q "vulnerabilities.count" "$WF"
     grep -q "WARNING" "$WF"
 }
+
+# A repository whose manifest needs a newer interpreter must be able to say so,
+# or pip-audit fails to resolve it and reports a security failure that is not one.
+@test "security exposes the python version used for the audit" {
+    grep -q "python-version:" "$WF"
+    grep -q "actions/setup-python" "$WF"
+}

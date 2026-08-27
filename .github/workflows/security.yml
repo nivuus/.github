@@ -2,6 +2,11 @@ name: Security
 
 on:
   workflow_call:
+    inputs:
+      python-version:
+        description: Python version used to audit the Python manifest
+        type: string
+        default: "3.12"
 
 jobs:
   security:
@@ -34,6 +39,11 @@ jobs:
           fi
           echo "Scanning range: $range"
           gitleaks git --no-banner --redact --exit-code 1 --log-opts="$range" .
+
+      - name: Set up Python for the audit
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
 
       - name: Audit Python dependencies
         run: |
