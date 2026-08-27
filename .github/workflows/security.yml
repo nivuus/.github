@@ -48,11 +48,13 @@ jobs:
       - name: Audit Python dependencies
         run: |
           if [ -f requirements.txt ]; then
-            pipx install pip-audit
-            pip-audit --strict -r requirements.txt
+            python -m pip install --quiet --upgrade pip
+            python -m pip install --quiet pip-audit
+            python -m pip_audit --strict -r requirements.txt
           elif [ -f pyproject.toml ]; then
-            pipx install pip-audit
-            pip-audit --strict .
+            python -m pip install --quiet --upgrade pip
+            python -m pip install --quiet pip-audit
+            python -m pip_audit --strict .
           else
             echo "No Python manifest, skipping."
           fi
