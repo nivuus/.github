@@ -58,6 +58,30 @@ Chacun s'ajoute au besoin, avec des entrées toutes optionnelles.
 | `ci-node.yml` | scripts npm définis | `node-version`, `working-directory`, `scripts` |
 | `codeql.yml` | analyse sémantique | `languages` (**obligatoire**) |
 
+## CodeQL exige une permission de l'appelant
+
+Parmi les workflows réutilisables de ce dépôt, `codeql.yml` est le seul qui
+exige que le dépôt appelant lui accorde des permissions : il lui faut
+`security-events: write` pour publier ses résultats, `actions: read` et
+`contents: read`, et un workflow appelé ne peut jamais détenir plus de droits
+que celui qui l'appelle. Sans ce bloc, GitHub ne se contente pas de faire
+échouer le job CodeQL : il refuse de démarrer l'exécution entière, avec un
+`startup_failure` sans aucun log — déroutant, puisque rien ne pointe vers la
+cause.
+
+Le job appelant doit donc porter le bloc `permissions` lui-même :
+
+```yaml
+  codeql:
+    uses: nivuus/.github/.github/workflows/codeql.yml@main
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    with:
+      languages: python
+```
+
 Chaque workflow saute proprement ce qui n'existe pas : un dépôt sans manifeste,
 sans tests ou sans le script npm attendu ne sera pas mis en échec pour autant.
 
