@@ -11,6 +11,10 @@ on:
         description: Root directory to scan with shellcheck
         type: string
         default: "."
+      zsh-syntax-paths:
+        description: Space-separated globs of zsh files to syntax-check, empty to skip
+        type: string
+        default: ""
 
 jobs:
   shell:
@@ -38,6 +42,26 @@ jobs:
             exit 0
           fi
           shellcheck -S warning "${files[@]}"
+
+      - name: Validate zsh syntax
+        if: inputs.zsh-syntax-paths != ''
+        env:
+          ZSH_PATHS: ${{ inputs.zsh-syntax-paths }}
+        run: |
+          shopt -s nullglob
+          failed=0
+          for pattern in $ZSH_PATHS; do
+            for file in $pattern; do
+              [ -f "$file" ] || continue
+              if zsh -n "$file"; then
+                echo "ok  $file"
+              else
+                echo "FAIL $file"
+                failed=1
+              fi
+            done
+          done
+          exit "$failed"
 
       - name: Run bats suites
         env:

@@ -1,5 +1,8 @@
 # Frequent French words with no valid English homograph.
 # Accented words are caught separately and do not belong here.
+# Before adding a word, check it is absent from an English dictionary:
+#   grep -ixF "$word" /usr/share/dict/american-english
+# A single English homograph produces false positives across every repository.
 affiche
 afficher
 ajoute
@@ -14,14 +17,12 @@ chacun
 chaine
 chaines
 chaque
-charger
 cherche
 chercher
 colonne
 colonnes
 comme
 courant
-cree
 creer
 dans
 demarre
@@ -29,8 +30,6 @@ demarrer
 dernier
 donnee
 donnees
-dossier
-dossiers
 ecrire
 ecrit
 effacer
@@ -46,9 +45,6 @@ fichier
 fichiers
 fonction
 initialiser
-lancer
-lecture
-lire
 liste
 listes
 longueur
@@ -56,7 +52,6 @@ longueurs
 lorsque
 mettre
 modifie
-modifier
 nombre
 nombres
 nouveau
@@ -68,17 +63,12 @@ parametres
 permet
 peut
 plusieurs
-pour
-precedent
-premier
 recherche
 recherches
 recupere
 recuperer
 renvoie
 renvoyer
-repertoire
-repertoires
 resultat
 resultats
 retourne
@@ -88,12 +78,10 @@ sauvegarder
 selon
 seulement
 sinon
-sortie
 sous
 suivant
 supprime
 supprimer
-tableau
 taille
 tailles
 toujours
@@ -104,7 +92,6 @@ utilisateurs
 utiliser
 valeur
 valeurs
-verification
 verifie
 verifier
 vider
