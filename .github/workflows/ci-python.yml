@@ -1,0 +1,64 @@
+name: CI Python
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: Python version to run against
+        type: string
+        default: "3.12"
+      test-paths:
+        description: Space-separated pytest targets
+        type: string
+        default: tests
+      lint-paths:
+        description: Root directory to scan with ruff
+        type: string
+        default: "."
+
+jobs:
+  python:
+    name: Python checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install dependencies when a manifest exists
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            pip install .
+          else
+            echo "No Python manifest, skipping dependency install."
+          fi
+          pip install ruff pytest
+
+      - name: Run ruff
+        env:
+          LINT_PATHS: ${{ inputs.lint-paths }}
+        run: |
+          ruff check "$LINT_PATHS"
+          ruff format --check "$LINT_PATHS"
+
+      - name: Run pytest
+        env:
+          TEST_PATHS: ${{ inputs.test-paths }}
+        run: |
+          found=0
+          for path in $TEST_PATHS; do
+            if [ -e "$path" ]; then
+              found=1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "No test path found, skipping."
+            exit 0
+          fi
+          # shellcheck disable=SC2086
+          pytest $TEST_PATHS
