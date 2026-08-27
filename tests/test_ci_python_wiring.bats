@@ -62,3 +62,13 @@ setup() {
 @test "skips when no Python file changed" {
     grep -q "No Python file changed" "$WF"
 }
+
+# Exit 5 is "no tests collected", not a failure. Without this, every
+# repository lacking a pytest suite goes red.
+@test "treats an empty pytest collection as success" {
+    grep -q "eq 5" "$WF"
+}
+
+@test "still fails when tests actually fail" {
+    grep -q 'exit "$status"' "$WF"
+}
