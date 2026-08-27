@@ -1,0 +1,65 @@
+name: Security
+
+on:
+  workflow_call:
+
+jobs:
+  security:
+    name: Secrets and dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+          if [ -n "$BASE_SHA" ]; then
+            range="${BASE_SHA}..${HEAD_SHA}"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            range="${PUSH_BEFORE}..${PUSH_AFTER}"
+          else
+            range="-1"
+          fi
+          echo "Scanning range: $range"
+          gitleaks git --no-banner --redact --exit-code 1 --log-opts="$range" .
+
+      - name: Audit Python dependencies
+        run: |
+          if [ -f requirements.txt ]; then
+            pipx install pip-audit
+            pip-audit --strict -r requirements.txt
+          elif [ -f pyproject.toml ]; then
+            pipx install pip-audit
+            pip-audit --strict .
+          else
+            echo "No Python manifest, skipping."
+          fi
+
+      - name: Audit Rust dependencies
+        run: |
+          if [ -f Cargo.lock ]; then
+            cargo install cargo-audit --locked
+            cargo audit
+          else
+            echo "No Cargo.lock, skipping."
+          fi
+
+      - name: Audit Node dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm audit --audit-level=high
+          else
+            echo "No package-lock.json, skipping."
+          fi
