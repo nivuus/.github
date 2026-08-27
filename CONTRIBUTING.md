@@ -31,6 +31,11 @@ production ; les fichiers de test et les fichiers générés en sont exemptés.
 Un fichier qui dépasse la limite signale généralement une responsabilité mal
 découpée.
 
+Pour un fichier ancien que l'on ne fait que retoucher — corriger un
+commentaire, ajouter une directive — sans vouloir le découper séance tenante,
+placez `policy: allow-long-file` dans le fichier, suivi de la raison. La dette
+reste visible et relisable en revue, au lieu d'être contournée en silence.
+
 **Conventional Commits.** Format `<type>(<portée>)!: <sujet en anglais>`.
 Types acceptés : `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`,
 `perf`, `build`, `style`, `revert`. Le format conditionne la génération du

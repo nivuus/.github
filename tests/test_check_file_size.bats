@@ -82,6 +82,23 @@ write_lines() {
     [ "$status" -eq 0 ]
 }
 
+@test "honours the file-level size escape hatch" {
+    write_lines "src/legacy.py" 900
+    printf '# policy: allow-long-file  accepted debt\n' >> "src/legacy.py"
+
+    run bash -c "echo src/legacy.py | '$SCRIPTS/check-file-size.sh'"
+
+    [ "$status" -eq 0 ]
+}
+
+@test "still rejects a long file without the hatch" {
+    write_lines "src/legacy.py" 900
+
+    run bash -c "echo src/legacy.py | '$SCRIPTS/check-file-size.sh'"
+
+    [ "$status" -eq 1 ]
+}
+
 @test "reports every violation, not just the first" {
     write_lines "src/a.py" 600
     write_lines "src/b.rs" 700
