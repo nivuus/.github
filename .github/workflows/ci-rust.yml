@@ -1,0 +1,36 @@
+name: CI Rust
+
+on:
+  workflow_call:
+    inputs:
+      manifest-path:
+        description: Path to the Cargo manifest
+        type: string
+        default: Cargo.toml
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the toolchain
+        run: rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        env:
+          MANIFEST: ${{ inputs.manifest-path }}
+        run: cargo fmt --manifest-path "$MANIFEST" --all --check
+
+      - name: Run clippy
+        env:
+          MANIFEST: ${{ inputs.manifest-path }}
+        run: cargo clippy --manifest-path "$MANIFEST" --all-targets -- -D warnings
+
+      - name: Run tests
+        env:
+          MANIFEST: ${{ inputs.manifest-path }}
+        run: cargo test --manifest-path "$MANIFEST" --all-targets
