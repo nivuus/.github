@@ -51,7 +51,20 @@ jobs:
         run: |
           if [ -f Cargo.lock ]; then
             cargo install cargo-audit --locked
-            cargo audit
+            # Warnings (unmaintained, yanked) are worth reporting but are not
+            # vulnerabilities: they describe a maintenance state, not a flaw.
+            # The Node audit draws the same line with --audit-level=high.
+            cargo audit --json > /tmp/audit.json || true
+            count=$(jq '.vulnerabilities.count' /tmp/audit.json)
+            warnings=$(jq '[.warnings[]?] | flatten | length' /tmp/audit.json)
+            echo "Vulnerabilities: $count, warnings: $warnings"
+            if [ "$warnings" -gt 0 ]; then
+              jq -r '.warnings | to_entries[] | .value[] | "WARNING \(.kind): \(.package.name) — \(.advisory.id)"' /tmp/audit.json || true
+            fi
+            if [ "$count" -gt 0 ]; then
+              jq -r '.vulnerabilities.list[] | "VULNERABILITY: \(.package.name) \(.package.version) — \(.advisory.id) \(.advisory.title)"' /tmp/audit.json
+              exit 1
+            fi
           else
             echo "No Cargo.lock, skipping."
           fi

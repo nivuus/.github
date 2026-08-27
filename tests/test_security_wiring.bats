@@ -65,3 +65,9 @@ setup() {
     run grep -qE '^\s*paths\s*=' "$root/.gitleaks.toml"
     [ "$status" -ne 0 ]
 }
+
+# An unmaintained crate is reported, not fatal; a vulnerability still fails.
+@test "rust audit fails on vulnerabilities, not on warnings" {
+    grep -q "vulnerabilities.count" "$WF"
+    grep -q "WARNING" "$WF"
+}
