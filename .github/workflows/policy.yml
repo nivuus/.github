@@ -49,7 +49,9 @@ jobs:
         run: .nivuus-socle/scripts/check-file-size.sh < changed.txt
 
       - name: Enforce English in code
-        run: .nivuus-socle/scripts/check-english.sh < changed.txt
+        env:
+          BASE: ${{ steps.base.outputs.ref }}
+        run: .nivuus-socle/scripts/check-english.sh --added-only "$BASE" HEAD < changed.txt
 
       - name: Enforce conventional commits
         if: github.event_name == 'pull_request'
