@@ -83,5 +83,16 @@ jobs:
             echo "No test path found, skipping."
             exit 0
           fi
+          set +e
           # shellcheck disable=SC2086
           pytest $TEST_PATHS
+          status=$?
+          set -e
+          # 5 means "no tests were collected", which is not a failure: the
+          # paths exist but hold no pytest module. 1 means tests ran and
+          # failed, and must still fail the job.
+          if [ "$status" -eq 5 ]; then
+            echo "No pytest tests collected in $TEST_PATHS, skipping."
+            exit 0
+          fi
+          exit "$status"
