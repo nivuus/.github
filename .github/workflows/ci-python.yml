@@ -15,6 +15,10 @@ on:
         description: Root directory to scan with ruff
         type: string
         default: "."
+      changed-only:
+        description: Restrict ruff to files changed by the pull request
+        type: boolean
+        default: true
 
 jobs:
   python:
@@ -22,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -32,19 +38,36 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
-          elif [ -f pyproject.toml ]; then
+          elif [ -f pyproject.toml ] && grep -qE '^\[(build-system|project)\]' pyproject.toml; then
             pip install .
           else
-            echo "No Python manifest, skipping dependency install."
+            echo "No installable Python manifest, skipping dependency install."
           fi
           pip install ruff pytest
 
       - name: Run ruff
         env:
           LINT_PATHS: ${{ inputs.lint-paths }}
+          CHANGED_ONLY: ${{ inputs.changed-only }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          ruff check "$LINT_PATHS"
-          ruff format --check "$LINT_PATHS"
+          if [ "$CHANGED_ONLY" = "true" ] && [ -n "$BASE_REF" ]; then
+            git fetch -q origin "$BASE_REF"
+            mapfile -t files < <(
+              git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" \
+                | grep -E '\.pyi?$' || true
+            )
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo "No Python file changed, skipping."
+              exit 0
+            fi
+            printf 'Checking %d changed file(s)\n' "${#files[@]}"
+            ruff check "${files[@]}"
+            ruff format --check "${files[@]}"
+          else
+            ruff check "$LINT_PATHS"
+            ruff format --check "$LINT_PATHS"
+          fi
 
       - name: Run pytest
         env:

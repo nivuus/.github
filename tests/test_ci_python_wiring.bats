@@ -42,3 +42,23 @@ setup() {
     run grep -nE '^ +run:.*\$\{\{' "$WF"
     [ "$status" -ne 0 ]
 }
+
+# A pyproject.toml holding only [tool.ruff] is not an installable package;
+# pip install . would fail hard on it.
+@test "installs only when pyproject describes a package" {
+    grep -q "build-system|project" "$WF"
+}
+
+@test "restricts ruff to changed files by default" {
+    grep -q "changed-only:" "$WF"
+    grep -q "diff-filter=ACMR" "$WF"
+}
+
+# Without full history the diff has no base and the step fails.
+@test "fetches full history so the diff has a base" {
+    grep -q "fetch-depth: 0" "$WF"
+}
+
+@test "skips when no Python file changed" {
+    grep -q "No Python file changed" "$WF"
+}
