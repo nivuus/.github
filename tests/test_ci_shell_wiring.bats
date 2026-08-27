@@ -33,3 +33,10 @@ setup() {
     run grep -nE '^ +run:.*\$\{\{' "$WF"
     [ "$status" -ne 0 ]
 }
+
+# shellcheck cannot read zsh, so without this nothing validates the syntax of
+# a zsh project's own sources.
+@test "offers an optional zsh syntax check" {
+    grep -q "zsh-syntax-paths:" "$WF"
+    grep -q "zsh -n" "$WF"
+}
