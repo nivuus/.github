@@ -1,0 +1,9 @@
+# The socle documents credential handling, so its plans and specs necessarily
+# quote example placeholders. Allowlist the placeholders themselves, never a
+# path: a path allowlist would silence real findings in whole directories.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documentation placeholders, not credentials"
+regexes = ['''YOUR_TOKEN''']

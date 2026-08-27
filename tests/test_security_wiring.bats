@@ -55,3 +55,13 @@ setup() {
 @test "scans the whole push range, not just the tip commit" {
     grep -q "github.event.before" "$WF"
 }
+
+# The socle's own docs quote credential placeholders; without an allowlist the
+# secret scan flags its documentation. Allowlist the placeholder, never a path.
+@test "allowlists documentation placeholders rather than paths" {
+    local root="${BATS_TEST_DIRNAME}/.."
+    [ -f "$root/.gitleaks.toml" ]
+    grep -q "YOUR_TOKEN" "$root/.gitleaks.toml"
+    run grep -qE '^\s*paths\s*=' "$root/.gitleaks.toml"
+    [ "$status" -ne 0 ]
+}
