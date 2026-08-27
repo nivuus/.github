@@ -78,3 +78,11 @@ setup() {
     grep -q "python-version:" "$WF"
     grep -q "actions/setup-python" "$WF"
 }
+
+# pipx builds its own environment from pipx's interpreter, ignoring
+# actions/setup-python, so a repository needing a specific Python could not get it.
+@test "audits python with the interpreter the workflow selected" {
+    grep -q "python -m pip_audit" "$WF"
+    run grep -q "pipx install pip-audit" "$WF"
+    [ "$status" -ne 0 ]
+}
