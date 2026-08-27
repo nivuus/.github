@@ -1,0 +1,54 @@
+name: CI Node
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version to run against
+        type: string
+        default: "20"
+      working-directory:
+        description: Directory holding package.json
+        type: string
+        default: "."
+      scripts:
+        description: Space-separated npm scripts to run when defined
+        type: string
+        default: typecheck lint test
+
+jobs:
+  node:
+    name: Node checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Install dependencies
+        env:
+          WORKDIR: ${{ inputs.working-directory }}
+        run: |
+          cd "$WORKDIR"
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run the defined scripts
+        env:
+          WORKDIR: ${{ inputs.working-directory }}
+          SCRIPTS: ${{ inputs.scripts }}
+        run: |
+          cd "$WORKDIR"
+          for script in $SCRIPTS; do
+            if [ "$(npm pkg get "scripts.$script")" = "{}" ]; then
+              echo "No $script script, skipping."
+              continue
+            fi
+            echo "Running $script"
+            npm run "$script"
+          done
