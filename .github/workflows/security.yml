@@ -41,7 +41,7 @@ jobs:
           gitleaks git --no-banner --redact --exit-code 1 --log-opts="$range" .
 
       - name: Set up Python for the audit
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python-version }}
 
