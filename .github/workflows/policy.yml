@@ -54,7 +54,17 @@ jobs:
         run: .nivuus-socle/scripts/check-english.sh --added-only "$BASE" HEAD < changed.txt
 
       - name: Enforce conventional commits
-        if: github.event_name == 'pull_request'
+        # Only where a branch commit subject can actually BECOME a subject on the
+        # base branch. A squash-only repository lands the pull request title -
+        # checked by the next step - and folds the branch subjects into the commit
+        # body, where their format is never read. Enforcing it there gates the
+        # shape of lines that will never exist.
+        # Written as a negation on purpose: a payload that does not carry the merge
+        # flags must RUN the check, never skip it.
+        if: >-
+          github.event_name == 'pull_request'
+          && !(github.event.repository.allow_merge_commit == false
+               && github.event.repository.allow_rebase_merge == false)
         env:
           BASE: ${{ steps.base.outputs.ref }}
         run: .nivuus-socle/scripts/check-commits.sh "$BASE" HEAD
