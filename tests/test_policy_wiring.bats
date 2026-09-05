@@ -34,6 +34,14 @@ setup() {
     grep -q "check-commits.sh" "$WF"
 }
 
+@test "the commit-subject check is skipped only on a positively squash-only repo" {
+    # The negation is the point: a payload without the merge flags must RUN the
+    # check. A positive form would silently disable it wherever the fields are
+    # absent, and nobody would notice a check that stopped running.
+    grep -q '!(github.event.repository.allow_merge_commit == false' "$WF"
+    grep -q 'allow_rebase_merge == false' "$WF"
+}
+
 @test "passes github expressions through env, never into run blocks" {
     run grep -nE '^ +run:.*\$\{\{' "$WF"
     [ "$status" -ne 0 ]
