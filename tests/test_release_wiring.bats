@@ -24,6 +24,25 @@ leaked_expressions() {
     printf '%s\n' "$body" | grep -F '${{'
 }
 
+# run_bodies <target_yaml>
+# Prints the full body of every run: step in the workflow, via the shared
+# multi-line-aware extractor. A prose match against the whole file (an input
+# description, a comment) is not proof that a command actually runs -
+# several of this suite's own assertions used to pass on that false comfort
+# (round-1 review, 2026-09-08). Anchoring to run: bodies excludes anything
+# that lives only in inputs:/description: text.
+run_bodies() {
+    awk -f "$HELPER" "$1"
+}
+
+# functional_run_lines <target_yaml>
+# run_bodies with full-line shell comments stripped, so a `#` line that
+# documents an anti-pattern (e.g. "# Never `sha256sum * > SHA256SUMS`") can
+# never be mistaken for the real command it warns against.
+functional_run_lines() {
+    run_bodies "$1" | grep -vE '^[[:space:]]*#'
+}
+
 @test "release workflow exists" {
     [ -f "$WF" ]
 }
@@ -45,8 +64,12 @@ leaked_expressions() {
     grep -q "fetch-depth: 0" "$WF"
 }
 
+# Anchored to the real invocation (an assignment capturing the exact script
+# path), not a bare substring: a bare "derive-version.sh" also matches this
+# step's own diagnostic `echo "derive-version.sh failed..."` line, so
+# pointing the actual call at a wrong script used to pass (round-1 review).
 @test "derives the version from the shared script" {
-    grep -q "derive-version.sh" "$WF"
+    grep -qE '="\$\(\.nivuus-socle/scripts/derive-version\.sh\)"' "$WF"
 }
 
 # Override 3: derive-version.sh writes the version on stdout and its
@@ -74,8 +97,13 @@ leaked_expressions() {
     grep -qE 'exit "\$status"' "$WF"
 }
 
+# Anchored to the actual run: invocation, not a bare substring: the
+# answers-file input's own description prose mentions
+# "check-idempotence.sh", so `run: true` used to pass this check (round-1
+# review) - the worst of the five, since it could silently disable the gate
+# that stops a broken install hook reaching a public release.
 @test "gates publication on the idempotence proof" {
-    grep -q "check-idempotence.sh" "$WF"
+    run_bodies "$WF" | grep -qF ".nivuus-socle/scripts/check-idempotence.sh"
 }
 
 # Override 2: check-idempotence.sh now resolves requires.packages by cloning
@@ -86,24 +114,39 @@ leaked_expressions() {
     grep -q "answers-file:" "$WF"
 }
 
+# Anchored to the real env: mapping line (key, colon, the exact expression),
+# not a bare substring: the answers-file input's own description prose also
+# names NIVUUS_ANSWERS_FILE, so deleting the actual env: line used to pass
+# this check (round-1 review).
 @test "passes the answers file via NIVUUS_ANSWERS_FILE" {
-    grep -q "NIVUUS_ANSWERS_FILE" "$WF"
+    grep -qE 'NIVUUS_ANSWERS_FILE:[[:space:]]*\$\{\{[[:space:]]*inputs\.answers-file[[:space:]]*\}\}' "$WF"
 }
 
 @test "installs what the harness imports" {
     grep -q "pyyaml" "$WF"
 }
 
+# Anchored to run: bodies with comments stripped: the comment documenting
+# why the working tree must not be used ("git archive exports TRACKED files
+# only...") also contains the words "git archive", so a bare substring match
+# used to pass even after the real call was replaced with `tar -cf - .`
+# (which WOULD ship .env files and logs into a public release - round-1
+# review, the one the reviewer found).
 @test "builds the archive from tracked files only" {
-    grep -q "git archive" "$WF"
+    functional_run_lines "$WF" | grep -qF "git archive HEAD"
 }
 
 # Override 1: `sha256sum ./* > SHA256SUMS` hashes its own empty self because
 # the redirect creates the file before the glob expands. The sums must be
 # written to a path excluded from the glob (a temp path, then moved in).
+# Anchored to run: bodies with comments stripped, and to the real "sha256sum
+# -- *" invocation specifically: the anti-pattern comment above it also
+# contains the bare word "sha256sum" and the string "SHA256SUMS", so a bare
+# substring match used to pass even after the real generating line was
+# deleted (round-1 review).
 @test "publishes checksums alongside the archive" {
-    grep -q "SHA256SUMS" "$WF"
-    grep -q "sha256sum" "$WF"
+    functional_run_lines "$WF" | grep -qF "SHA256SUMS"
+    functional_run_lines "$WF" | grep -qE 'sha256sum[[:space:]]+--[[:space:]]+\*'
 }
 
 @test "does not redirect sha256sum directly into SHA256SUMS in the assets directory" {
@@ -132,15 +175,47 @@ leaked_expressions() {
 
 # The manifest version travels in the published archive, never in main: the
 # branch is protected with enforce_admins, so a bump commit could not land.
-# grep -q "0.0.0" alone is not load-bearing: "." is a regex metacharacter, so
-# it matches "0-0-0" or "0x0x0" too and would never catch that check going
-# missing. Assert the real properties instead: the version is stamped with
-# sed into the exported tree, and the workflow never commits a bump to the
-# branch (only tags and pushes the tag).
+# No "0.0.0" conjunct here: that string appears only in a comment
+# (round-1 review), so checking for it adds fragility (a documentation
+# reword would redden CI) without adding coverage. The three conjuncts below
+# already cover the real mechanism.
 @test "injects the version into the archive rather than committing it" {
-    grep -qF "0.0.0" "$WF"
     grep -qF "sed -i" "$WF"
     grep -qF '${VERSION}' "$WF"
     run grep -n "git commit" "$WF"
     [ "$status" -ne 0 ]
+}
+
+# Round-1 review, point 2/3: a separate `git tag -a` needs a committer
+# identity this workflow never configures (a hard failure on a fresh
+# runner), and a tag-then-push-then-create-release sequence is not atomic -
+# a failure between the push and the release create leaves a public tag
+# with no release, unrecoverable by re-running on a protected main.
+# `gh release create --target` creates the tag itself in the same call that
+# creates the release, closing both gaps at once.
+@test "creates the tag via gh release create rather than a separate git tag and push" {
+    run functional_run_lines "$WF"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"git tag -a"* ]]
+    [[ "$output" != *"git push origin"* ]]
+    [[ "$output" == *"gh release create"* ]]
+    [[ "$output" == *"--target"* ]]
+}
+
+# Round-1 review, point 4a: an explicitly named version-files entry that is
+# not in the exported tree is an operator error (a typo, a renamed file)
+# worth stopping the release for - not something to pass over in silence the
+# way an auto-detected candidate's absence is.
+@test "fails loudly when an explicitly requested version-files entry is missing from the export" {
+    functional_run_lines "$WF" | grep -qF "is not in the exported tree"
+}
+
+# Round-1 review, point 4b: the stamping step used to echo "Stamped $VERSION
+# into $file" unconditionally after the case, even when the sed pattern
+# found nothing to replace. A before/after comparison makes the log
+# describe what actually happened.
+@test "logs a stamp only when the file's content actually changed" {
+    functional_run_lines "$WF" | grep -qE 'before="\$\(sha256sum'
+    functional_run_lines "$WF" | grep -qE 'after="\$\(sha256sum'
+    functional_run_lines "$WF" | grep -qE 'if \[ "\$before" != "\$after" \]'
 }

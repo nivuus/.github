@@ -110,14 +110,29 @@ jobs:
           # committed there: it is stamped into the ARCHIVE instead, and the
           # checked-in manifest keeps 0.0.0 to declare itself a dev copy.
           files="$VERSION_FILES"
+          explicit=1
           if [ -z "$files" ]; then
+            explicit=0
             for candidate in nivuus-package.yaml package.json pyproject.toml; do
               [ -f "/tmp/export/$candidate" ] && files="$files $candidate"
             done
           fi
           for file in $files; do
             path="/tmp/export/$file"
-            [ -f "$path" ] || continue
+            if [ ! -f "$path" ]; then
+              # An auto-detected candidate simply being absent is normal (not
+              # every package ships a package.json); a caller-named
+              # version-files entry that is not in the exported tree is an
+              # operator error worth stopping the release for, not passing
+              # over in silence - that is the difference between "I looked"
+              # and "you asked".
+              if [ "$explicit" -eq 1 ]; then
+                echo "version-files names $file, but it is not in the exported tree" >&2
+                exit 1
+              fi
+              continue
+            fi
+            before="$(sha256sum "$path")"
             case "$file" in
               *.yaml|*.yml)
                 sed -i "s/^version: .*/version: ${VERSION}/" "$path" ;;
@@ -126,7 +141,13 @@ jobs:
               *.toml)
                 sed -i "s/^version = .*/version = \"${VERSION}\"/" "$path" ;;
             esac
-            echo "Stamped $VERSION into $file"
+            after="$(sha256sum "$path")"
+            # Only report a stamp that actually happened - an unconditional
+            # echo here would lie whenever the sed pattern found nothing to
+            # replace (e.g. a file with no version: line at all).
+            if [ "$before" != "$after" ]; then
+              echo "Stamped $VERSION into $file"
+            fi
           done
 
           name="${GITHUB_REPOSITORY##*/}"
@@ -185,15 +206,22 @@ jobs:
           } > RELEASE_NOTES.md
           cat RELEASE_NOTES.md
 
-      - name: Tag and publish
+      - name: Publish the release
         if: steps.version.outputs.release == 'yes'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          git tag -a "v${VERSION}" -m "Release v${VERSION}"
-          git push origin "v${VERSION}"
+          # gh release create tags ${GITHUB_SHA} itself (via --target) and
+          # creates the release in one call, deliberately never a separate
+          # `git tag -a` + `git push`. A local `git tag -a` needs a
+          # committer identity this workflow never configures - a hard
+          # failure on a fresh runner - and a tag-then-push-then-create
+          # sequence is not atomic: a failure between the push and the
+          # release create would leave a public tag with no release, and a
+          # protected main gives no easy way to delete and retry it.
           gh release create "v${VERSION}" \
+            --target "${GITHUB_SHA}" \
             --title "${GITHUB_REPOSITORY##*/} v${VERSION}" \
             --notes-file RELEASE_NOTES.md \
             release-assets/*
