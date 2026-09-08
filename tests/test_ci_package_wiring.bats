@@ -105,6 +105,34 @@ leaked_expressions() {
     [[ "$output" == *'${{ inputs.package-dir }}'* ]]
 }
 
+# A dash-inline run:'s block-scalar body is indented relative to run:
+# itself, not to the dash: a sibling key of the same step (e.g. a same-step
+# "if:") sits at run:'s column, not the dash's, and must be recognised as
+# ending the body rather than being swallowed into it. Otherwise a routine
+# step condition reads as a leak. This also proves the fix did not simply
+# stop detecting anything: a genuine leak inside the same dash-inline body
+# must still be reported.
+@test "the multi-line guard ends a dash-inline body at a sibling key, not a genuine leak inside it" {
+    local tmp
+    tmp="$(mktemp)"
+    {
+        printf 'name: Test\n'
+        printf 'jobs:\n'
+        printf '  x:\n'
+        printf '    steps:\n'
+        printf '      - run: |\n'
+        printf '          echo "%s"\n' '${{ inputs.package-dir }}'
+        printf '        if: %s\n' "\${{ github.event_name == 'push' }}"
+        printf '      - name: Another\n'
+        printf '        run: echo done\n'
+    } > "$tmp"
+    run leaked_expressions "$HELPER" "$tmp"
+    rm -f "$tmp"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'${{ inputs.package-dir }}'* ]]
+    [[ "$output" != *"github.event_name"* ]]
+}
+
 # The dependency clones the script performs need git and network access,
 # which a restrictive checkout could interfere with. Guard against that
 # regression by never seeing a persist-credentials: false or similar

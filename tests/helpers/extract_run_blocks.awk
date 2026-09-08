@@ -15,9 +15,14 @@
 
     # A step's run: key normally starts the line after its own indentation,
     # but a step with no separate name:/uses: line writes it inline after
-    # the list-item dash ("- run: |"), at the same column as the dash.
+    # the list-item dash ("- run: |"), at the same column as the dash. The
+    # block-scalar body (and any sibling key, like a same-step "if:") is
+    # indented relative to run: itself, not to the dash, so the recorded
+    # indent must be the column where "run:" starts, not cur_indent - the
+    # two coincide in the non-dash form but differ by the width of the
+    # "- " prefix (which can be more than two characters) in the dash form.
     if (match(line, /^[[:space:]]*(- +)?run:/)) {
-        indent = cur_indent
+        indent = RLENGTH - length("run:")
         print line
         if (line ~ /run:[[:space:]]*[|>]/) { in_run = 1 }
         next
