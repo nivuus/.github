@@ -13,7 +13,10 @@
         else { print line; next }
     }
 
-    if (match(line, /^[[:space:]]*run:/)) {
+    # A step's run: key normally starts the line after its own indentation,
+    # but a step with no separate name:/uses: line writes it inline after
+    # the list-item dash ("- run: |"), at the same column as the dash.
+    if (match(line, /^[[:space:]]*(- +)?run:/)) {
         indent = cur_indent
         print line
         if (line ~ /run:[[:space:]]*[|>]/) { in_run = 1 }

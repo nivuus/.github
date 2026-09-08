@@ -2,6 +2,28 @@
 
 setup() {
     WF="${BATS_TEST_DIRNAME}/../.github/workflows/ci-package.yml"
+    HELPER="${BATS_TEST_DIRNAME}/helpers/extract_run_blocks.awk"
+}
+
+# leaked_expressions <helper_awk> <target_yaml>
+# Prints any ${{ }} expression the extractor found reaching a run: body.
+# Fails LOUDLY (status 2, no output) when the extractor is missing or errors,
+# rather than letting a broken extractor silently read as "no leak found":
+# without pipefail, a crashing awk feeding an empty stream into `grep -F`
+# makes grep exit non-zero for the wrong reason, and the caller could not
+# tell "no leak" from "the check never actually ran".
+# Exit codes: 0 = leak found, 1 = ran fine and found nothing, 2 = broken.
+leaked_expressions() {
+    local helper="$1" target="$2" body
+    if [ ! -f "$helper" ]; then
+        echo "extractor missing: $helper" >&2
+        return 2
+    fi
+    if ! body="$(awk -f "$helper" "$target")"; then
+        echo "extractor failed: $helper" >&2
+        return 2
+    fi
+    printf '%s\n' "$body" | grep -F '${{'
 }
 
 @test "ci-package workflow exists" {
@@ -46,8 +68,41 @@ setup() {
 # (single-line value or multi-line block, by indentation) and prints its
 # full body, so the expression is caught wherever inside a run: it lands.
 @test "passes github expressions through env, never into run blocks (including multi-line)" {
-    run bash -c "awk -f '${BATS_TEST_DIRNAME}/helpers/extract_run_blocks.awk' '$WF' | grep -F '\${{'"
-    [ "$status" -ne 0 ]
+    [ -f "$HELPER" ]
+    run leaked_expressions "$HELPER" "$WF"
+    # 1 = the extractor ran fine and grep found nothing. 0 would mean a
+    # leak; 2 would mean the extractor itself is missing or broken - both
+    # must fail this test, never read as "clean".
+    [ "$status" -eq 1 ]
+}
+
+# The guard above is only as good as its extractor. Prove that when the
+# extractor is unavailable, the guard reports failure rather than quietly
+# agreeing with "no leak found" - the exact regression a pipefail-less
+# `awk ... | grep` produced last round.
+@test "the multi-line guard fails loudly when its extractor is missing" {
+    run leaked_expressions "${BATS_TEST_DIRNAME}/helpers/does-not-exist.awk" "$WF"
+    [ "$status" -eq 2 ]
+}
+
+# extract_run_blocks.awk must also see a step with no separate name:/uses:
+# line, where run: sits inline after the list-item dash ("- run: |") rather
+# than on its own indented line.
+@test "the multi-line guard also catches a leak in a dash-inline run step" {
+    local tmp
+    tmp="$(mktemp)"
+    {
+        printf 'name: Test\n'
+        printf 'jobs:\n'
+        printf '  x:\n'
+        printf '    steps:\n'
+        printf '      - run: |\n'
+        printf '          echo "%s"\n' '${{ inputs.package-dir }}'
+    } > "$tmp"
+    run leaked_expressions "$HELPER" "$tmp"
+    rm -f "$tmp"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'${{ inputs.package-dir }}'* ]]
 }
 
 # The dependency clones the script performs need git and network access,
