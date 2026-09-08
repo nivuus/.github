@@ -50,9 +50,16 @@ def load_manifest(path):
 PY
 
     # A fake git: "clone" never touches the network. It records every
-    # attempted clone (url + target dir) so a test can assert a clone was
-    # or was not attempted, and fabricates the target directory from a
+    # attempted clone (url + target dir, even a refused one) so a test can
+    # assert a clone was or was not attempted and that a refused clone left
+    # no directory behind, and fabricates the target directory from a
     # fixture registered under FIXTURES_DIR/<repo name>, if any.
+    #
+    # FAIL_CLONE_FOR, when set to a repo basename (e.g. "ghost-pkg"), makes
+    # cloning THAT repo only fail with a nonzero exit - every other clone in
+    # the same test still succeeds. This is what lets a test prove the
+    # dependency-clone-failure path specifically, rather than merely proving
+    # that a globally broken git breaks everything.
     FAKE_GIT_LOG="$(mktemp)"
     FIXTURES_DIR="$(mktemp -d)"
     export FAKE_GIT_LOG FIXTURES_DIR
@@ -68,9 +75,13 @@ if [ "$1" = "clone" ]; then
     n=${#args[@]}
     url="${args[$((n - 2))]}"
     dir="${args[$((n - 1))]}"
-    printf '%s %s\n' "$url" "$dir" >> "$FAKE_GIT_LOG"
-    mkdir -p "$dir"
     name="$(basename "$url")"
+    printf '%s %s\n' "$url" "$dir" >> "$FAKE_GIT_LOG"
+    if [ -n "${FAIL_CLONE_FOR:-}" ] && [ "$name" = "$FAIL_CLONE_FOR" ]; then
+        echo "fake git: refusing to clone $url (FAIL_CLONE_FOR)" >&2
+        exit 1
+    fi
+    mkdir -p "$dir"
     if [ -d "${FIXTURES_DIR}/${name}" ]; then
         cp -r "${FIXTURES_DIR}/${name}/." "$dir/"
     fi
@@ -202,4 +213,49 @@ YAML
     grep -qx -- "--answers" "$HARNESS_ARGV_LOG"
     grep -qx -- "$ANSWERS_FILE" "$HARNESS_ARGV_LOG"
     rm -f "$ANSWERS_FILE"
+}
+
+@test "fails when cloning a dependency fails, naming that dependency and leaving no leftover directory" {
+    commit_file "nivuus-package.yaml" \
+        $'name: demo\nrequires:\n  packages: [ghost-pkg]' \
+        "chore: add manifest with an unfetchable dependency"
+
+    FAIL_CLONE_FOR="ghost-pkg" NIVUUS_INSTALLER_DIR="$FAKE_INSTALLER" \
+        run "$SCRIPTS/check-idempotence.sh"
+
+    [ "$status" -ne 0 ]
+    [[ "$output" == *'"ghost-pkg"'* ]]
+    [[ "$output" != *"harness ran on"* ]]
+
+    # The script created its scratch directory (via mktemp -d) before
+    # attempting the clone into it, and the fake git logged that attempt
+    # even though it refused - so this is the directory the EXIT trap must
+    # have removed on the way out.
+    local attempted_dir
+    attempted_dir="$(awk '{print $2}' "$FAKE_GIT_LOG" | tail -n1)"
+    [ -n "$attempted_dir" ]
+    [ ! -e "$attempted_dir" ]
+}
+
+@test "fails when a prerequisite's manifest is unparseable, attributing the failure to it" {
+    mkdir -p "${FIXTURES_DIR}/broken-pkg"
+    # Invalid YAML (unterminated flow sequence): the real parser must raise,
+    # not the hand-rolled grep this script deliberately avoids.
+    printf 'name: broken-pkg\nrequires:\n  packages: [oops\n' \
+        > "${FIXTURES_DIR}/broken-pkg/nivuus-package.yaml"
+    commit_file "nivuus-package.yaml" \
+        $'name: demo\nrequires:\n  packages: [broken-pkg]' \
+        "chore: add manifest with an unparseable dependency"
+
+    NIVUUS_INSTALLER_DIR="$FAKE_INSTALLER" run "$SCRIPTS/check-idempotence.sh"
+
+    [ "$status" -ne 0 ]
+    # The real parser raises a yaml.parser.ParserError, surfaced verbatim -
+    # this script never swallows it into a generic message.
+    [[ "$output" == *"yaml.parser.ParserError"* ]]
+    [[ "$output" == *"Could not read requires.packages from"* ]]
+    # Attributed to the prerequisite that was cloned (a fresh directory, not
+    # the package under test's own manifest in $REPO).
+    [[ "$output" != *"${REPO}/nivuus-package.yaml"* ]]
+    [[ "$output" != *"harness ran on"* ]]
 }
