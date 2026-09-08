@@ -1,0 +1,276 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: Directory holding nivuus-package.yaml, when this repo is a package
+        type: string
+        default: "."
+      version-files:
+        description: Space-separated files whose version field is rewritten in the archive
+        type: string
+        default: ""
+      build-command:
+        description: Optional command building a native artifact (a .deb, a wheel)
+        type: string
+        default: ""
+      artifact-glob:
+        description: Optional glob of extra assets to attach, relative to the repo
+        type: string
+        default: ""
+      answers-file:
+        description: >-
+          Path to a JSON file of wizard answers, forwarded to
+          check-idempotence.sh via NIVUUS_ANSWERS_FILE. Required for packages
+          that cannot install unattended, such as console (needs windows_iso).
+        type: string
+        default: ""
+      prove-package:
+        description: >-
+          Run the idempotence gate before publishing. An explicit opt-out for
+          a package whose install hook cannot yet be proven in CI (e.g. it
+          needs build artefacts no release step produces) - set false only
+          with a comment naming the blocker and the plan that will remove it.
+          Defaults to true: skipping the gate must always be a visible,
+          reviewable choice in the caller's own workflow, never silent.
+        type: boolean
+        default: true
+
+# Two merges to main inside one run's duration would derive the same
+# version from the same last tag; the second `gh release create` would then
+# fail on the tag the first run already published. Serialise releases per
+# repository rather than letting them race - never cancel one mid-publish,
+# since that could leave a tag with no release behind it.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the shared socle
+        uses: actions/checkout@v4
+        with:
+          repository: nivuus/.github
+          ref: main
+          path: .nivuus-socle
+
+      - name: Derive the next version
+        id: version
+        run: |
+          set +e
+          version="$(.nivuus-socle/scripts/derive-version.sh)"
+          status=$?
+          set -e
+          # 3 means no commit since the last tag justifies a release. A
+          # documentation-only merge must end green, not red.
+          if [ "$status" -eq 3 ]; then
+            echo "Nothing releasable since the last tag."
+            echo "release=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Any OTHER non-zero status is a real error (outside a git repo, or
+          # a shallow clone whose tags were never fetched) and must fail the
+          # job rather than fall through to the skip path.
+          if [ "$status" -ne 0 ]; then
+            echo "derive-version.sh failed with status $status" >&2
+            exit "$status"
+          fi
+          echo "Next version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=yes" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        if: steps.version.outputs.release == 'yes'
+        with:
+          python-version: "3.12"
+
+      - name: Install what the harness imports
+        if: steps.version.outputs.release == 'yes'
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Prove the install hook is idempotent
+        if: steps.version.outputs.release == 'yes' && inputs.prove-package
+        env:
+          PACKAGE_DIR: ${{ inputs.package-dir }}
+          NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
+        run: .nivuus-socle/scripts/check-idempotence.sh "$PACKAGE_DIR"
+
+      - name: Build the native artifact
+        if: steps.version.outputs.release == 'yes' && inputs.build-command != ''
+        env:
+          BUILD_COMMAND: ${{ inputs.build-command }}
+          # A build command is responsible for reading this if it wants the
+          # artefact it produces (a .deb, a wheel) to carry the real
+          # version: this step runs before the export-and-stamp step below,
+          # so the checked-in tree still reads whatever version is committed.
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash -c "$BUILD_COMMAND"
+
+      - name: Export the tracked tree and stamp the version into it
+        if: steps.version.outputs.release == 'yes'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_FILES: ${{ inputs.version-files }}
+        run: |
+          # git archive exports TRACKED files only - never the working tree.
+          # That is the guarantee that no .env, no log and no build artefact
+          # reaches a public release; iso-build/build.sh relies on the same one.
+          mkdir -p /tmp/export release-assets
+          git archive HEAD | tar -x -C /tmp/export
+
+          # main is protected with enforce_admins, so the version cannot be
+          # committed there: it is stamped into the ARCHIVE instead, and the
+          # checked-in manifest keeps 0.0.0 to declare itself a dev copy.
+          files="$VERSION_FILES"
+          explicit=1
+          if [ -z "$files" ]; then
+            explicit=0
+            for candidate in nivuus-package.yaml package.json pyproject.toml; do
+              [ -f "/tmp/export/$candidate" ] && files="$files $candidate"
+            done
+          fi
+          for file in $files; do
+            path="/tmp/export/$file"
+            if [ ! -f "$path" ]; then
+              # An auto-detected candidate simply being absent is normal (not
+              # every package ships a package.json); a caller-named
+              # version-files entry that is not in the exported tree is an
+              # operator error worth stopping the release for, not passing
+              # over in silence - that is the difference between "I looked"
+              # and "you asked".
+              if [ "$explicit" -eq 1 ]; then
+                echo "version-files names $file, but it is not in the exported tree" >&2
+                exit 1
+              fi
+              continue
+            fi
+            before="$(sha256sum "$path")"
+            case "$file" in
+              *.yaml|*.yml)
+                sed -i "s/^version: .*/version: ${VERSION}/" "$path" ;;
+              *.json)
+                sed -i "s/\"version\": *\"[^\"]*\"/\"version\": \"${VERSION}\"/" "$path" ;;
+              *.toml)
+                # A table-blind sed would rewrite the FIRST column-0
+                # `version = ` line it finds, wherever it lives. retro's
+                # pyproject.toml declares `dynamic = ["version"]` in
+                # [project] and computes the real version at build time; its
+                # only column-0 `version = ` line sits under
+                # [tool.setuptools.dynamic], defining HOW to compute it, not
+                # a value to overwrite. Rewriting that line makes
+                # setuptools see the version defined twice and refuse to
+                # build. Track the current table header and only ever touch
+                # a version line while inside [project]; when [project]
+                # itself declares the version dynamic, there is nothing of
+                # ours to stamp - skip the file entirely.
+                if awk '/^\[/{t=$0} t=="[project]" && /^dynamic[[:space:]]*=.*"version"/{f=1} END{exit !f}' "$path"; then
+                  echo "Skipping TOML stamp for $file: [project].dynamic already declares version" >&2
+                else
+                  awk -v version="$VERSION" '
+                    /^\[/ { tbl=$0 }
+                    tbl == "[project]" && /^version[[:space:]]*=/ {
+                      print "version = \"" version "\""
+                      next
+                    }
+                    { print }
+                  ' "$path" > "${path}.stamped"
+                  mv "${path}.stamped" "$path"
+                fi
+                ;;
+            esac
+            after="$(sha256sum "$path")"
+            # Only report a stamp that actually happened - an unconditional
+            # echo here would lie whenever the sed pattern found nothing to
+            # replace (e.g. a file with no version: line at all).
+            if [ "$before" != "$after" ]; then
+              echo "Stamped $VERSION into $file"
+            fi
+          done
+
+          name="${GITHUB_REPOSITORY##*/}"
+          tar -czf "release-assets/${name}-${VERSION}.tar.gz" -C /tmp/export .
+
+      - name: Attach the native artifact
+        if: steps.version.outputs.release == 'yes' && inputs.artifact-glob != ''
+        env:
+          ARTIFACT_GLOB: ${{ inputs.artifact-glob }}
+        run: |
+          # shellcheck disable=SC2086
+          cp $ARTIFACT_GLOB release-assets/ || {
+            echo "The build command declared artefacts but none matched $ARTIFACT_GLOB"
+            exit 1
+          }
+
+      - name: Generate checksums
+        if: steps.version.outputs.release == 'yes'
+        run: |
+          cd release-assets
+          # Never `sha256sum * > SHA256SUMS`: the redirect creates the file
+          # before the glob expands, so it would hash its own empty self.
+          # Writing to a path OUTSIDE this directory (RUNNER_TEMP), then
+          # moving it in, keeps it out of its own input no matter what.
+          sha256sum -- * > "${RUNNER_TEMP}/SHA256SUMS"
+          mv "${RUNNER_TEMP}/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest the build provenance
+        if: steps.version.outputs.release == 'yes'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-assets/*.tar.gz
+
+      - name: Generate the release notes
+        if: steps.version.outputs.release == 'yes'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+          {
+            echo "## Changements"
+            echo
+            if [ -z "$previous" ]; then
+              git log --no-merges --pretty=format:'- %s (%h)'
+            else
+              git log "${previous}..HEAD" --no-merges --pretty=format:'- %s (%h)'
+            fi
+            echo
+            echo
+            echo "## Pose"
+            echo
+            echo '```'
+            echo "nivuus update ${GITHUB_REPOSITORY##*/}"
+            echo '```'
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Publish the release
+        if: steps.version.outputs.release == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # gh release create tags ${GITHUB_SHA} itself (via --target) and
+          # creates the release in one call, deliberately never a separate
+          # `git tag -a` + `git push`. A local `git tag -a` needs a
+          # committer identity this workflow never configures - a hard
+          # failure on a fresh runner - and a tag-then-push-then-create
+          # sequence is not atomic: a failure between the push and the
+          # release create would leave a public tag with no release, and a
+          # protected main gives no easy way to delete and retry it.
+          gh release create "v${VERSION}" \
+            --target "${GITHUB_SHA}" \
+            --title "${GITHUB_REPOSITORY##*/} v${VERSION}" \
+            --notes-file RELEASE_NOTES.md \
+            release-assets/*

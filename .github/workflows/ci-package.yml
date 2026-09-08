@@ -1,0 +1,44 @@
+name: CI Package
+
+on:
+  workflow_call:
+    inputs:
+      package-dir:
+        description: Directory holding nivuus-package.yaml
+        type: string
+        default: "."
+      answers-file:
+        description: >-
+          Path to a JSON file of wizard answers, forwarded to the harness as
+          --answers. Required for packages that cannot install unattended,
+          such as console (needs windows_iso).
+        type: string
+        default: ""
+
+jobs:
+  package:
+    name: Package contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@v4
+
+      - name: Check out the shared socle
+        uses: actions/checkout@v4
+        with:
+          repository: nivuus/.github
+          ref: main
+          path: .nivuus-socle
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install what the harness imports
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Prove the install hook is idempotent
+        env:
+          PACKAGE_DIR: ${{ inputs.package-dir }}
+          NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
+        run: .nivuus-socle/scripts/check-idempotence.sh "$PACKAGE_DIR"
