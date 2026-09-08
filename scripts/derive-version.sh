@@ -18,10 +18,21 @@ readonly PATCH_RE="^(fix|perf|refactor)${SCOPE}: "
 readonly BREAKING_RE="^[a-z]+${SCOPE}!: "
 
 main() {
+    # Refuse to run outside a git repository
+    if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+        printf 'fatal: not a git repository\n' >&2
+        return 1
+    fi
+
     local last
     last="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
 
     if [ -z "$last" ]; then
+        # Refuse a shallow clone where tags may not have been fetched
+        if git rev-parse --is-shallow-repository | grep -q '^true$'; then
+            printf 'fatal: shallow clone detected; full history or fetched tags required for version derivation\n' >&2
+            return 1
+        fi
         printf '%s\n' "${INITIAL_VERSION:-1.0.0}"
         return 0
     fi

@@ -87,3 +87,31 @@ setup() {
     [ "$status" -eq 0 ]
     [ "$output" = "1.0.0" ]
 }
+
+@test "running outside a git repository exits 1" {
+    cd /tmp
+    run "$SCRIPTS/derive-version.sh"
+    [ "$status" -eq 1 ]
+    [ "$output" = "fatal: not a git repository" ]
+}
+
+@test "a shallow clone exits 1 instead of printing initial version" {
+    git tag -a v1.2.3 -m "release"
+    commit_file "a.txt" "x" "feat: add the stock endpoint"
+    REPO_BACKUP="$REPO"
+    SHALLOW_DIR="$(mktemp -d)"
+    cd "$SHALLOW_DIR"
+    git clone --depth 1 "file://${REPO_BACKUP}" .
+    run "$SCRIPTS/derive-version.sh"
+    [ "$status" -eq 1 ]
+    [ "$output" = "fatal: shallow clone detected; full history or fetched tags required for version derivation" ]
+}
+
+@test "feat before fix still yields minor bump (order independence)" {
+    git tag -a v1.2.3 -m "release"
+    commit_file "a.txt" "x" "feat: add the update entity"
+    commit_file "b.txt" "x" "fix: correct the unit path"
+    run "$SCRIPTS/derive-version.sh"
+    [ "$status" -eq 0 ]
+    [ "$output" = "1.3.0" ]
+}
