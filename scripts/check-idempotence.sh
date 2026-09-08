@@ -122,6 +122,17 @@ main() {
     local package="${1:-.}"
 
     if [ ! -f "${package}/${MANIFEST}" ]; then
+        # A missing manifest is only ever normal for the default ".": most
+        # repositories in this org are not packages at all. When the caller
+        # NAMED a directory explicitly, its absence is a typo or a moved
+        # package (e.g. console/ renamed) - passing over that in silence
+        # would turn the gate into a no-op with a green job, exactly the
+        # "I looked" vs "you asked" distinction version-files already draws.
+        if [ "$package" != "." ]; then
+            printf 'No %s in %s, and %s was explicitly requested: refusing to skip.\n' \
+                "$MANIFEST" "$package" "$package" >&2
+            return 1
+        fi
         printf 'No %s in %s, skipping the idempotence proof.\n' \
             "$MANIFEST" "$package"
         return 0
@@ -130,6 +141,17 @@ main() {
     trap cleanup EXIT
 
     local installer="${NIVUUS_INSTALLER_DIR:-}"
+    # nivuus/installer's own pull requests check out THEMSELVES as the
+    # calling repository, so the harness this script needs may already sit
+    # right there in $GITHUB_WORKSPACE - notably on the very PR that adds
+    # both the harness and the workflow wiring that calls this script, when
+    # a clone of installer's default branch cannot yet contain it. Prefer
+    # that local copy before falling back to a clone; NIVUUS_INSTALLER_DIR
+    # is a still-more-explicit override and keeps top priority.
+    if [ -z "$installer" ] && [ -n "${GITHUB_WORKSPACE:-}" ] \
+        && [ -f "${GITHUB_WORKSPACE}/scripts/idempotence_harness.py" ]; then
+        installer="$GITHUB_WORKSPACE"
+    fi
     if [ -z "$installer" ]; then
         installer="$(mktemp -d)"
         TEMP_DIRS+=("$installer")

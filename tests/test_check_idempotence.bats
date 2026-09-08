@@ -110,11 +110,37 @@ teardown() {
     [[ "$output" == *"skipping"* ]]
 }
 
+@test "refuses, rather than skips, when an explicitly named package directory has no manifest" {
+    NIVUUS_INSTALLER_DIR="$FAKE_INSTALLER" run "$SCRIPTS/check-idempotence.sh" "console"
+    [ "$status" -ne 0 ]
+    [[ "$output" != *"skipping"* ]]
+    [[ "$output" == *"console"* ]]
+}
+
 @test "runs the harness when a manifest is present" {
     commit_file "nivuus-package.yaml" "name: demo" "chore: add manifest"
     NIVUUS_INSTALLER_DIR="$FAKE_INSTALLER" run "$SCRIPTS/check-idempotence.sh"
     [ "$status" -eq 0 ]
     [[ "$output" == *"harness ran on"* ]]
+}
+
+@test "prefers a harness already present in the caller's own checkout over cloning nivuus/installer" {
+    # On the pull request that adds both the harness and the workflow wiring
+    # to nivuus/installer itself, a fresh clone of installer's default
+    # branch cannot yet contain the harness - it isn't merged. The calling
+    # repository's own checkout (GITHUB_WORKSPACE) already has it.
+    commit_file "nivuus-package.yaml" "name: demo" "chore: add manifest"
+    GITHUB_WORKSPACE="$FAKE_INSTALLER" run "$SCRIPTS/check-idempotence.sh"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"harness ran on"* ]]
+    [ ! -s "$FAKE_GIT_LOG" ]
+}
+
+@test "falls back to cloning nivuus/installer when no local harness is present" {
+    commit_file "nivuus-package.yaml" "name: demo" "chore: add manifest"
+    GITHUB_WORKSPACE="$(mktemp -d)" run "$SCRIPTS/check-idempotence.sh"
+    [ "$status" -ne 0 ]
+    grep -q "https://github.com/nivuus/installer" "$FAKE_GIT_LOG"
 }
 
 @test "fails when the harness refuses the package" {

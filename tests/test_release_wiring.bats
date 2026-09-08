@@ -219,3 +219,74 @@ functional_run_lines() {
     functional_run_lines "$WF" | grep -qE 'after="\$\(sha256sum'
     functional_run_lines "$WF" | grep -qE 'if \[ "\$before" != "\$after" \]'
 }
+
+# CRITICAL 2: desk's release stub passes no `with:`, so the shared workflow
+# ran the idempotence gate with no answers file and no way to opt out. An
+# explicit, visible opt-out (default on) is right; a silently-skipped gate
+# is not.
+@test "exposes an explicit opt-out for the idempotence gate, defaulting to on" {
+    grep -qF "prove-package:" "$WF"
+    grep -qE 'default:[[:space:]]*true' "$WF"
+}
+
+@test "the idempotence gate step is conditional on prove-package" {
+    run grep -n "Prove the install hook is idempotent" "$WF"
+    [ "$status" -eq 0 ]
+    local line
+    line="$(cut -d: -f1 <<< "$output" | head -1)"
+    sed -n "${line},+3p" "$WF" | grep -qF "inputs.prove-package"
+}
+
+# CRITICAL 3: retro/pyproject.toml declares `dynamic = ["version"]` in
+# [project] and its only column-0 `version = ` line sits under
+# [tool.setuptools.dynamic] (defining HOW to compute the version, not a
+# value to overwrite). A table-blind sed rewrote that line, breaking the
+# published wheel: `tool.setuptools.dynamic.version must be valid exactly by
+# one definition`. Stamping must track the current table and only ever
+# touch a version line while inside [project], and must skip a file whose
+# [project] table itself declares the version dynamic.
+@test "TOML stamping tracks the current table, never touching version blindly" {
+    functional_run_lines "$WF" | grep -qF 'tbl=$0'
+    functional_run_lines "$WF" | grep -qF 'tbl == "[project]"'
+}
+
+@test "TOML stamping skips the file when [project].dynamic already declares version" {
+    functional_run_lines "$WF" | grep -qF 'dynamic[[:space:]]*=.*"version"'
+    functional_run_lines "$WF" | grep -qF 'Skipping TOML stamp'
+}
+
+@test "TOML stamping no longer rewrites the first column-0 version line blindly" {
+    run functional_run_lines "$WF"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'sed -i "s/^version = .*/version = \"${VERSION}\"/" "$path"'* ]]
+}
+
+# IMPORTANT 7: the build step used to run before the export-and-stamp step,
+# so a .deb or wheel it produced carried the checked-in (dev) version while
+# the archive published beside it carried the real one. A build command
+# cannot honour VERSION if it is never handed to it.
+@test "exports VERSION into the build step's environment" {
+    run grep -n "name: Build the native artifact" "$WF"
+    [ "$status" -eq 0 ]
+    local line
+    line="$(cut -d: -f1 <<< "$output" | head -1)"
+    sed -n "${line},+9p" "$WF" | grep -qE 'VERSION:[[:space:]]*\$\{\{[[:space:]]*steps\.version\.outputs\.version[[:space:]]*\}\}'
+}
+
+@test "the build step still runs before the export-and-stamp step" {
+    run grep -n "name: Build the native artifact\|name: Export the tracked tree" "$WF"
+    [ "$status" -eq 0 ]
+    local build_line export_line
+    build_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    export_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
+    [ "$build_line" -lt "$export_line" ]
+}
+
+# IMPORTANT 10: two merges to main inside one run's duration derive the same
+# version; the second `gh release create` fails on the tag the first run
+# already published. Serialise per repository rather than race.
+@test "serialises releases per repository so concurrent merges cannot race" {
+    grep -qE '^concurrency:' "$WF"
+    grep -qF 'group: release-${{ github.repository }}' "$WF"
+    grep -qF 'cancel-in-progress: false' "$WF"
+}

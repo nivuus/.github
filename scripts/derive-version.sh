@@ -58,9 +58,21 @@ main() {
     # A breaking change may also be declared in the body rather than with the
     # bang marker; the footer is the form the Conventional Commits spec makes
     # normative, so it cannot be treated as a lesser signal.
-    if [ "$bump" != major ] \
-        && git log --no-merges --format='%b' "${last}..HEAD" \
-            | grep -q '^BREAKING CHANGE:'; then
+    #
+    # `grep -q` exits at its FIRST match and closes its end of the pipe. If
+    # git log is still writing when that happens, it takes SIGPIPE, the
+    # pipeline's exit status becomes 141 under `pipefail`, and the `&&` below
+    # reads as false - dropping a real breaking change to a minor bump. This
+    # is a pure scheduling race, not a data-size threshold: it depends on
+    # whether grep has already found its match and exited before git log's
+    # next write(), so it can pass on one run and fail on the next with the
+    # exact same input. `grep -c` never exits early - it always reads its
+    # input to EOF to produce a count - so git log is guaranteed to finish
+    # writing normally. Do not "fix" this by removing `pipefail`.
+    local breaking_count
+    breaking_count="$(git log --no-merges --format='%b' "${last}..HEAD" \
+        | grep -c '^BREAKING CHANGE:')"
+    if [ "$bump" != major ] && [ "$breaking_count" -gt 0 ]; then
         bump="major"
     fi
 

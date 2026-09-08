@@ -26,6 +26,25 @@ on:
           that cannot install unattended, such as console (needs windows_iso).
         type: string
         default: ""
+      prove-package:
+        description: >-
+          Run the idempotence gate before publishing. An explicit opt-out for
+          a package whose install hook cannot yet be proven in CI (e.g. it
+          needs build artefacts no release step produces) - set false only
+          with a comment naming the blocker and the plan that will remove it.
+          Defaults to true: skipping the gate must always be a visible,
+          reviewable choice in the caller's own workflow, never silent.
+        type: boolean
+        default: true
+
+# Two merges to main inside one run's duration would derive the same
+# version from the same last tag; the second `gh release create` would then
+# fail on the tag the first run already published. Serialise releases per
+# repository rather than letting them race - never cancel one mid-publish,
+# since that could leave a tag with no release behind it.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -82,7 +101,7 @@ jobs:
         run: python -m pip install --upgrade pip pyyaml
 
       - name: Prove the install hook is idempotent
-        if: steps.version.outputs.release == 'yes'
+        if: steps.version.outputs.release == 'yes' && inputs.prove-package
         env:
           PACKAGE_DIR: ${{ inputs.package-dir }}
           NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
@@ -92,6 +111,11 @@ jobs:
         if: steps.version.outputs.release == 'yes' && inputs.build-command != ''
         env:
           BUILD_COMMAND: ${{ inputs.build-command }}
+          # A build command is responsible for reading this if it wants the
+          # artefact it produces (a .deb, a wheel) to carry the real
+          # version: this step runs before the export-and-stamp step below,
+          # so the checked-in tree still reads whatever version is committed.
+          VERSION: ${{ steps.version.outputs.version }}
         run: bash -c "$BUILD_COMMAND"
 
       - name: Export the tracked tree and stamp the version into it
@@ -139,7 +163,32 @@ jobs:
               *.json)
                 sed -i "s/\"version\": *\"[^\"]*\"/\"version\": \"${VERSION}\"/" "$path" ;;
               *.toml)
-                sed -i "s/^version = .*/version = \"${VERSION}\"/" "$path" ;;
+                # A table-blind sed would rewrite the FIRST column-0
+                # `version = ` line it finds, wherever it lives. retro's
+                # pyproject.toml declares `dynamic = ["version"]` in
+                # [project] and computes the real version at build time; its
+                # only column-0 `version = ` line sits under
+                # [tool.setuptools.dynamic], defining HOW to compute it, not
+                # a value to overwrite. Rewriting that line makes
+                # setuptools see the version defined twice and refuse to
+                # build. Track the current table header and only ever touch
+                # a version line while inside [project]; when [project]
+                # itself declares the version dynamic, there is nothing of
+                # ours to stamp - skip the file entirely.
+                if awk '/^\[/{t=$0} t=="[project]" && /^dynamic[[:space:]]*=.*"version"/{f=1} END{exit !f}' "$path"; then
+                  echo "Skipping TOML stamp for $file: [project].dynamic already declares version" >&2
+                else
+                  awk -v version="$VERSION" '
+                    /^\[/ { tbl=$0 }
+                    tbl == "[project]" && /^version[[:space:]]*=/ {
+                      print "version = \"" version "\""
+                      next
+                    }
+                    { print }
+                  ' "$path" > "${path}.stamped"
+                  mv "${path}.stamped" "$path"
+                fi
+                ;;
             esac
             after="$(sha256sum "$path")"
             # Only report a stamp that actually happened - an unconditional
