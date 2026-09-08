@@ -20,13 +20,14 @@ setup() {
     grep -q "answers-file:" "$WF"
 }
 
-@test "checks out the socle to reach its scripts" {
+# Checking these two properties independently lets either drift without the
+# other: a step could check the socle out to .nivuus-socle while calling
+# check-idempotence.sh from anywhere, or vice versa. Only the joined path
+# proves the script that actually runs is the one from the socle checkout.
+@test "checks out the socle and invokes its script from that checkout" {
     grep -q "repository: nivuus/.github" "$WF"
-    grep -q ".nivuus-socle" "$WF"
-}
-
-@test "runs the idempotence proof" {
-    grep -q "check-idempotence.sh" "$WF"
+    grep -q "path: .nivuus-socle" "$WF"
+    grep -qF ".nivuus-socle/scripts/check-idempotence.sh" "$WF"
 }
 
 @test "installs what the harness imports" {
@@ -39,8 +40,13 @@ setup() {
     grep -q "NIVUUS_ANSWERS_FILE" "$WF"
 }
 
-@test "passes github expressions through env, never into run blocks" {
-    run grep -nE '^ +run:.*\$\{\{' "$WF"
+# A single-line anchor (^ +run:.*\$\{\{) is blind the moment a run: value
+# moves into a `run: |` block: the expression lands on a following line the
+# regex never inspects. extract_run_blocks.awk walks every run: step
+# (single-line value or multi-line block, by indentation) and prints its
+# full body, so the expression is caught wherever inside a run: it lands.
+@test "passes github expressions through env, never into run blocks (including multi-line)" {
+    run bash -c "awk -f '${BATS_TEST_DIRNAME}/helpers/extract_run_blocks.awk' '$WF' | grep -F '\${{'"
     [ "$status" -ne 0 ]
 }
 
