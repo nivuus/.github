@@ -274,3 +274,22 @@ functional_run_lines() {
     grep -qF 'group: release-${{ github.repository }}' "$WF"
     grep -qF 'cancel-in-progress: false' "$WF"
 }
+
+# The notes are built by a script, not by an inline run: block, because their
+# one hard rule - which entries survive when the changelog does not fit - is
+# invisible in a workflow log and easy to get backwards. See
+# tests/test_release_notes.bats.
+@test "builds the notes through the tested script" {
+    grep -q "release-notes.sh" "$WF"
+}
+
+# The body has to be built BEFORE the release is created: gh release create
+# makes the tag and the release in one call, so a body the API refuses costs
+# the tag too.
+@test "generates the notes before publishing" {
+    notes="$(grep -n "release-notes.sh" "$WF" | head -1 | cut -d: -f1)"
+    # Anchored on the command, not the string: the file's header comment
+    # names `gh release create` a hundred lines above the step that runs it.
+    publish="$(grep -nE '^ +gh release create' "$WF" | head -1 | cut -d: -f1)"
+    [ "$notes" -lt "$publish" ]
+}
