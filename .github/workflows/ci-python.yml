@@ -15,19 +15,16 @@ on:
         description: Root directory to scan with ruff
         type: string
         default: "."
-      changed-only:
-        description: Restrict ruff to files changed by the pull request
-        type: boolean
-        default: true
 
 jobs:
   python:
     name: Python checks
     runs-on: ubuntu-latest
     steps:
+      # A shallow checkout is enough: the only step that needed history was
+      # the changed-only diff, and it is gone. Verified 2026-09-09 that no
+      # suite in installer, marketplace or home-stock reads git history.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -58,34 +55,36 @@ jobs:
       # selection this suite lints for is E4/E7/E9/F, "real defects, never
       # style". A formatter check is style by definition, and an unadopted one
       # measured nothing about the code - only whether `ruff format` had been
-      # run. Worse, it was invisible where it mattered: with changed-only the
-      # check reads the diff on a pull request but the WHOLE TREE on a push to
-      # main, so four repositories carried a green pull request and a red main
-      # for the same commit, continuously since 2026-08-27.
+      # run. Worse, it was invisible where it mattered: the workflow then had
+      # a changed-only mode that read the diff on a pull request and the whole
+      # tree on a push, so four repositories carried a green pull request and a
+      # red main for the same commit, continuously from 2026-08-27. That mode
+      # is gone too - see the next comment.
       #
       # Re-adding it is a deliberate act: reformat the trees in the same
       # commit, or the branch that adds it back goes red on merge, not before.
+      # WHY THIS READS THE WHOLE TREE, ON A PULL REQUEST AS ON A PUSH.
+      #
+      # It used to have a `changed-only` input, defaulting to true, which
+      # narrowed ruff to the files a pull request touched - but only when
+      # github.event.pull_request.base.ref was set, which is to say only on a
+      # pull request. A push to main fell through to the whole tree. The two
+      # branches therefore asked DIFFERENT QUESTIONS of the same commit, and a
+      # green pull request said nothing about the main it was about to become.
+      #
+      # Measured: installer, marketplace, home-stock and desk all carried a
+      # green pull request and a red main, continuously from 2026-08-27 to
+      # 2026-09-09. Nobody was ignoring a warning - the warning was on a page
+      # nobody had a reason to open, because the merge button was green.
+      #
+      # The narrow mode is gone rather than merely defaulted off: an input
+      # that reintroduces this on one line, in one repository, is how it comes
+      # back. The three repositories calling this workflow lint their whole
+      # tree in 9 to 16 seconds, so there was nothing to buy with it either.
       - name: Run ruff
         env:
           LINT_PATHS: ${{ inputs.lint-paths }}
-          CHANGED_ONLY: ${{ inputs.changed-only }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-        run: |
-          if [ "$CHANGED_ONLY" = "true" ] && [ -n "$BASE_REF" ]; then
-            git fetch -q origin "$BASE_REF"
-            mapfile -t files < <(
-              git diff --name-only --diff-filter=ACMR "origin/${BASE_REF}...HEAD" \
-                | grep -E '\.pyi?$' || true
-            )
-            if [ "${#files[@]}" -eq 0 ]; then
-              echo "No Python file changed, skipping."
-              exit 0
-            fi
-            printf 'Checking %d changed file(s)\n' "${#files[@]}"
-            ruff check "${files[@]}"
-          else
-            ruff check "$LINT_PATHS"
-          fi
+        run: ruff check "$LINT_PATHS"
 
       - name: Run pytest
         env:

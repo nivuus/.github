@@ -61,18 +61,37 @@ setup() {
     grep -q "build-system|project" "$WF"
 }
 
-@test "restricts ruff to changed files by default" {
-    grep -q "changed-only:" "$WF"
-    grep -q "diff-filter=ACMR" "$WF"
+# THE ASYMMETRY THIS REPLACES. The workflow used to narrow ruff to the files a
+# pull request touched, but only when github.event.pull_request.base.ref was
+# set - which is to say only on a pull request; a push to main fell through to
+# the whole tree. The two branches asked different questions of the same
+# commit, so a green pull request said nothing about the main it was about to
+# become: installer, marketplace, home-stock and desk each carried a green
+# pull request and a red main, continuously from 2026-08-27 to 2026-09-09.
+#
+# These three assertions are anchored on the MECHANISM, not on the input name,
+# so reintroducing it under another name still reddens them.
+# `^[^#]*` keeps these off the comment lines that explain the history: a
+# comment naming the mechanism must not read as the mechanism, which is the
+# same trap the formatter tripwire had to be moved off.
+@test "never narrows the lint to a diff" {
+    run grep -nE '^[^#]*(diff-filter|git diff)' "$WF"
+    [ "$status" -ne 0 ]
 }
 
-# Without full history the diff has no base and the step fails.
-@test "fetches full history so the diff has a base" {
-    grep -q "fetch-depth: 0" "$WF"
+@test "never branches on the pull request base ref" {
+    run grep -nE '^[^#]*(pull_request\.base\.ref|BASE_REF)' "$WF"
+    [ "$status" -ne 0 ]
 }
 
-@test "skips when no Python file changed" {
-    grep -q "No Python file changed" "$WF"
+@test "lints the path it was given, unconditionally" {
+    run awk -f "$HELPER" "$WF"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'ruff check "$LINT_PATHS"'* ]]
+    # No `if` anywhere in a run: body of this workflow's lint step: the whole
+    # bug was a conditional that made the check mean two different things.
+    lint_run="$(printf '%s\n' "$output" | grep -c 'ruff check')"
+    [ "$lint_run" -eq 1 ]
 }
 
 # Exit 5 is "no tests collected", not a failure. Without this, every
