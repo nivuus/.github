@@ -91,7 +91,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release=yes" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.version.outputs.release == 'yes'
         with:
           python-version: "3.12"
