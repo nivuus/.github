@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the calling repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out the shared socle
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: nivuus/.github
           ref: main

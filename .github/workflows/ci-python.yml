@@ -24,7 +24,7 @@ jobs:
       # A shallow checkout is enough: the only step that needed history was
       # the changed-only diff, and it is gone. Verified 2026-09-09 that no
       # suite in installer, marketplace or home-stock reads git history.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
