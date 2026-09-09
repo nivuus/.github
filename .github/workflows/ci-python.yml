@@ -45,6 +45,26 @@ jobs:
           fi
           pip install ruff pytest
 
+      # WHY THERE IS NO `ruff format --check` HERE. This workflow used to run
+      # one, and no repository in the suite had ever adopted the formatter:
+      # rerunning it in September 2026 found 98 files to reformat in installer,
+      # 175 in home-stock and 12 in marketplace - about 50 000 lines of churn
+      # for code nobody had asked to restyle. The 2026-08-27 socle plan already
+      # recorded the cost ("85 fichiers a reformater sur trois depots, rouges
+      # des l'adoption") and left the choice open; the choice made on
+      # 2026-09-09 is to not enforce formatting at all.
+      #
+      # The reason is the one already written down in installer/ruff.toml: the
+      # selection this suite lints for is E4/E7/E9/F, "real defects, never
+      # style". A formatter check is style by definition, and an unadopted one
+      # measured nothing about the code - only whether `ruff format` had been
+      # run. Worse, it was invisible where it mattered: with changed-only the
+      # check reads the diff on a pull request but the WHOLE TREE on a push to
+      # main, so four repositories carried a green pull request and a red main
+      # for the same commit, continuously since 2026-08-27.
+      #
+      # Re-adding it is a deliberate act: reformat the trees in the same
+      # commit, or the branch that adds it back goes red on merge, not before.
       - name: Run ruff
         env:
           LINT_PATHS: ${{ inputs.lint-paths }}
@@ -63,10 +83,8 @@ jobs:
             fi
             printf 'Checking %d changed file(s)\n' "${#files[@]}"
             ruff check "${files[@]}"
-            ruff format --check "${files[@]}"
           else
             ruff check "$LINT_PATHS"
-            ruff format --check "$LINT_PATHS"
           fi
 
       - name: Run pytest

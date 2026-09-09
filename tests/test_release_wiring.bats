@@ -1,28 +1,12 @@
 #!/usr/bin/env bats
 
+load helpers/run_blocks
+
 setup() {
     WF="${BATS_TEST_DIRNAME}/../.github/workflows/release.yml"
     HELPER="${BATS_TEST_DIRNAME}/helpers/extract_run_blocks.awk"
 }
 
-# leaked_expressions <helper_awk> <target_yaml>
-# Prints any ${{ }} expression the extractor found reaching a run: body.
-# Mirrors test_ci_package_wiring.bats's helper: fails LOUDLY (status 2, no
-# output) when the extractor is missing or errors, rather than letting a
-# broken extractor silently read as "no leak found".
-# Exit codes: 0 = leak found, 1 = ran fine and found nothing, 2 = broken.
-leaked_expressions() {
-    local helper="$1" target="$2" body
-    if [ ! -f "$helper" ]; then
-        echo "extractor missing: $helper" >&2
-        return 2
-    fi
-    if ! body="$(awk -f "$helper" "$target")"; then
-        echo "extractor failed: $helper" >&2
-        return 2
-    fi
-    printf '%s\n' "$body" | grep -F '${{'
-}
 
 # run_bodies <target_yaml>
 # Prints the full body of every run: step in the workflow, via the shared
