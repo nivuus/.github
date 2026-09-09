@@ -52,3 +52,30 @@ setup() {
     grep -q "zsh-syntax-paths:" "$WF"
     grep -q "zsh -n" "$WF"
 }
+
+@test "exposes an overridable shellcheck exclude list" {
+    grep -q "shellcheck-exclude:" "$WF"
+}
+
+# The default has to be "scan everything": a repository that wants a directory
+# out of the scan must name it in its own workflow, on purpose. A non-empty
+# default would quietly narrow every caller at once.
+@test "excludes nothing unless a caller asks" {
+    run awk '/^      shellcheck-exclude:/ {f=1; next} f && /^      [a-z-]+:/ {f=0} f' "$WF"
+    [[ "$output" == *'default: ""'* ]]
+}
+
+# The word split on $SHELLCHECK_EXCLUDE is wanted; the glob expansion that
+# comes with it is not. Unquoted and unguarded, a pattern like ./docs/* is
+# expanded against the working directory before find is called, and find gets
+# whatever existed at that moment instead of the pattern it was handed.
+@test "disables globbing while splitting the exclude list" {
+    grep -q "set -f" "$WF"
+    grep -q "set +f" "$WF"
+}
+
+# An exclude that swallows the whole tree must read as a number in the log,
+# not as a silent green tick.
+@test "reports how many scripts it actually read" {
+    grep -q "Checking %d shell script" "$WF"
+}

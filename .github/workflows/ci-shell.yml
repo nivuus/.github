@@ -11,6 +11,13 @@ on:
         description: Root directory to scan with shellcheck
         type: string
         default: "."
+      shellcheck-exclude:
+        description: >
+          Space-separated find(1) -path patterns to prune from the scan, empty
+          to scan everything. For material that is a record rather than code -
+          see the comment on the step below.
+        type: string
+        default: ""
       zsh-syntax-paths:
         description: Space-separated globs of zsh files to syntax-check, empty to skip
         type: string
@@ -28,19 +35,43 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zsh bats shellcheck
 
+      # WHY AN EXCLUDE EXISTS AT ALL. Some repositories check in shell that is
+      # evidence, not code: the instrument scripts a plan actually ran, kept
+      # beside the measurements they produced. Editing one to satisfy a linter
+      # edits the record of what was run - a missing shebang or an unused
+      # variable in an archived script is a fact about that run, not a defect
+      # to correct. The default is still "scan everything": a repository that
+      # wants a directory out has to name it, in its own workflow, on purpose.
       - name: Run shellcheck
         env:
           SHELLCHECK_PATHS: ${{ inputs.shellcheck-paths }}
+          SHELLCHECK_EXCLUDE: ${{ inputs.shellcheck-exclude }}
         run: |
+          prune=()
+          # `set -f` matters: the word split below is wanted, the glob
+          # expansion that comes with it is not. Unquoted, a pattern like
+          # ./docs/* is expanded against the working directory here and find
+          # never sees the pattern it was given - it sees whatever happened to
+          # exist at that moment, one -path per match.
+          set -f
+          for pattern in $SHELLCHECK_EXCLUDE; do
+            prune+=( -path "$pattern" -prune -o )
+            echo "Excluding $pattern"
+          done
+          set +f
           mapfile -t files < <(
             find "$SHELLCHECK_PATHS" \
               -path '*/.git' -prune -o \
+              "${prune[@]}" \
               -type f \( -name '*.sh' -o -name '*.bash' \) -print
           )
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No shell scripts found, skipping."
             exit 0
           fi
+          # Say what was actually read, so an exclude that swallows the whole
+          # tree reads as a number in the log instead of as a green tick.
+          printf 'Checking %d shell script(s)\n' "${#files[@]}"
           shellcheck -S warning "${files[@]}"
 
       - name: Validate zsh syntax
