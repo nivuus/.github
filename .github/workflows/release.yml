@@ -227,7 +227,7 @@ jobs:
 
       - name: Attest the build provenance
         if: steps.version.outputs.release == 'yes'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: release-assets/*.tar.gz
 
