@@ -293,3 +293,54 @@ functional_run_lines() {
     publish="$(grep -nE '^ +gh release create' "$WF" | head -1 | cut -d: -f1)"
     [ "$notes" -lt "$publish" ]
 }
+
+# git archive exports tracked files only, so a package whose install hook
+# needs gitignored build outputs (desk: client/dist, plateforme/node_modules)
+# published archives the updater could download but never install (every
+# desk release up to v1.2.3). The bundle step is the explicit, reviewable
+# way for such a package to add what it built to the exported tree - never
+# by archiving the working tree, which would ship .env files and logs.
+@test "exposes a bundle knob for built files the archive must carry" {
+    grep -q "bundle-command:" "$WF"
+}
+
+@test "runs the bundle command against the export directory, through env" {
+    run grep -n "name: Bundle built files into the export" "$WF"
+    [ "$status" -eq 0 ]
+    local line
+    line="$(cut -d: -f1 <<< "$output" | head -1)"
+    sed -n "${line},+6p" "$WF" | grep -qF "inputs.bundle-command != ''"
+    sed -n "${line},+6p" "$WF" | grep -qE 'BUNDLE_COMMAND:[[:space:]]*\$\{\{[[:space:]]*inputs\.bundle-command[[:space:]]*\}\}'
+    sed -n "${line},+6p" "$WF" | grep -qE 'EXPORT_DIR:[[:space:]]*/tmp/export'
+    functional_run_lines "$WF" | grep -qF 'bash -c "$BUNDLE_COMMAND"'
+}
+
+# The bundle must land AFTER the tracked tree is exported (or the export
+# would overwrite it) and BEFORE the tree is archived (or the archive would
+# not carry it): the step order is the whole mechanism.
+@test "bundles between the export and the archive" {
+    run grep -n "name: Export the tracked tree\|name: Bundle built files into the export\|name: Stamp the version into the export and archive it" "$WF"
+    [ "$status" -eq 0 ]
+    local export_line bundle_line archive_line
+    export_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    bundle_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
+    archive_line="$(sed -n '3p' <<< "$output" | cut -d: -f1)"
+    [ "$export_line" -lt "$bundle_line" ]
+    [ "$bundle_line" -lt "$archive_line" ]
+    # The export step extracts, the archive step tars: both anchored on
+    # their real commands, not on the step names alone.
+    sed -n "${export_line},${bundle_line}p" "$WF" | grep -qF "git archive HEAD | tar -x -C /tmp/export"
+    sed -n "${archive_line},\$p" "$WF" | grep -qF 'tar -czf "release-assets/${name}-${VERSION}.tar.gz" -C /tmp/export .'
+}
+
+# A package can only prove its install hook against build outputs that
+# already exist: the build has to run before the gate, not only before the
+# export-and-stamp step.
+@test "runs the build before the idempotence gate" {
+    run grep -n "name: Build the native artifact\|name: Prove the install hook is idempotent" "$WF"
+    [ "$status" -eq 0 ]
+    local build_line gate_line
+    build_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    gate_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
+    [ "$build_line" -lt "$gate_line" ]
+}

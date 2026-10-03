@@ -19,6 +19,16 @@ on:
         description: Optional glob of extra assets to attach, relative to the repo
         type: string
         default: ""
+      bundle-command:
+        description: >-
+          Optional command adding BUILT files to the exported tree before it
+          is archived, run with EXPORT_DIR set to that tree. git archive
+          exports tracked files only, so a package whose install hook needs
+          gitignored build outputs (a bundled web client, a node_modules
+          tree) publishes an archive that cannot install unless this step
+          copies them in. Pair it with build-command, which runs first.
+        type: string
+        default: ""
       answers-file:
         description: >-
           Path to a JSON file of wizard answers, forwarded to
@@ -100,13 +110,9 @@ jobs:
         if: steps.version.outputs.release == 'yes'
         run: python -m pip install --upgrade pip pyyaml
 
-      - name: Prove the install hook is idempotent
-        if: steps.version.outputs.release == 'yes' && inputs.prove-package
-        env:
-          PACKAGE_DIR: ${{ inputs.package-dir }}
-          NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
-        run: .nivuus-socle/scripts/check-idempotence.sh "$PACKAGE_DIR"
-
+      # Before the idempotence gate, not after it: a package whose install
+      # hook needs build outputs (desk: client/dist, plateforme/node_modules)
+      # can only be proven against the files this step produces.
       - name: Build the native artifact
         if: steps.version.outputs.release == 'yes' && inputs.build-command != ''
         env:
@@ -118,18 +124,38 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: bash -c "$BUILD_COMMAND"
 
-      - name: Export the tracked tree and stamp the version into it
+      - name: Prove the install hook is idempotent
+        if: steps.version.outputs.release == 'yes' && inputs.prove-package
+        env:
+          PACKAGE_DIR: ${{ inputs.package-dir }}
+          NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
+        run: .nivuus-socle/scripts/check-idempotence.sh "$PACKAGE_DIR"
+
+      - name: Export the tracked tree
+        if: steps.version.outputs.release == 'yes'
+        run: |
+          # git archive exports TRACKED files only - never the working tree.
+          # That is the guarantee that no .env, no log and no stray build
+          # artefact reaches a public release; iso-build/build.sh relies on
+          # the same one. Build outputs a package DOES want published go
+          # through the bundle step below, explicitly, never by archiving
+          # the working tree.
+          mkdir -p /tmp/export release-assets
+          git archive HEAD | tar -x -C /tmp/export
+
+      - name: Bundle built files into the export
+        if: steps.version.outputs.release == 'yes' && inputs.bundle-command != ''
+        env:
+          BUNDLE_COMMAND: ${{ inputs.bundle-command }}
+          EXPORT_DIR: /tmp/export
+        run: bash -c "$BUNDLE_COMMAND"
+
+      - name: Stamp the version into the export and archive it
         if: steps.version.outputs.release == 'yes'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           VERSION_FILES: ${{ inputs.version-files }}
         run: |
-          # git archive exports TRACKED files only - never the working tree.
-          # That is the guarantee that no .env, no log and no build artefact
-          # reaches a public release; iso-build/build.sh relies on the same one.
-          mkdir -p /tmp/export release-assets
-          git archive HEAD | tar -x -C /tmp/export
-
           # main is protected with enforce_admins, so the version cannot be
           # committed there: it is stamped into the ARCHIVE instead, and the
           # checked-in manifest keeps 0.0.0 to declare itself a dev copy.
