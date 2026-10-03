@@ -19,6 +19,16 @@ on:
         description: Optional glob of extra assets to attach, relative to the repo
         type: string
         default: ""
+      node-version:
+        description: >-
+          Node.js version to set up before the build, the gate and the
+          bundle, when the package needs one (desk: engines.node pins 24).
+          Empty, the default, leaves the runner's own Node alone. The
+          runner's Node is NOT the package's: ubuntu-latest shipped 22
+          while desk required 24, and the gate refused the archive it had
+          just built (2026-10-03).
+        type: string
+        default: ""
       bundle-command:
         description: >-
           Optional command adding BUILT files to the exported tree before it
@@ -109,6 +119,12 @@ jobs:
       - name: Install what the harness imports
         if: steps.version.outputs.release == 'yes'
         run: python -m pip install --upgrade pip pyyaml
+
+      - name: Set up the package's Node.js
+        if: steps.version.outputs.release == 'yes' && inputs.node-version != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
 
       # Before the export: the bundle step below copies what this step
       # produces (desk: client/dist, plateforme/node_modules) into the
