@@ -110,9 +110,10 @@ jobs:
         if: steps.version.outputs.release == 'yes'
         run: python -m pip install --upgrade pip pyyaml
 
-      # Before the idempotence gate, not after it: a package whose install
-      # hook needs build outputs (desk: client/dist, plateforme/node_modules)
-      # can only be proven against the files this step produces.
+      # Before the export: the bundle step below copies what this step
+      # produces (desk: client/dist, plateforme/node_modules) into the
+      # exported tree, and the idempotence gate then proves the install hook
+      # against that tree.
       - name: Build the native artifact
         if: steps.version.outputs.release == 'yes' && inputs.build-command != ''
         env:
@@ -123,13 +124,6 @@ jobs:
           # so the checked-in tree still reads whatever version is committed.
           VERSION: ${{ steps.version.outputs.version }}
         run: bash -c "$BUILD_COMMAND"
-
-      - name: Prove the install hook is idempotent
-        if: steps.version.outputs.release == 'yes' && inputs.prove-package
-        env:
-          PACKAGE_DIR: ${{ inputs.package-dir }}
-          NIVUUS_ANSWERS_FILE: ${{ inputs.answers-file }}
-        run: .nivuus-socle/scripts/check-idempotence.sh "$PACKAGE_DIR"
 
       - name: Export the tracked tree
         if: steps.version.outputs.release == 'yes'
@@ -227,6 +221,29 @@ jobs:
 
           name="${GITHUB_REPOSITORY##*/}"
           tar -czf "release-assets/${name}-${VERSION}.tar.gz" -C /tmp/export .
+
+      # Against the EXPORTED tree, after the bundle and the stamp: the
+      # checkout is not what gets published. A bundle command that copies a
+      # required output to the wrong place leaves a hook that passes on the
+      # checkout and an archive that cannot install - the exact failure this
+      # gate exists to stop. The archive is already written, but nothing is
+      # published until this step is green.
+      - name: Prove the install hook is idempotent
+        if: steps.version.outputs.release == 'yes' && inputs.prove-package
+        env:
+          PACKAGE_DIR: ${{ inputs.package-dir }}
+          ANSWERS_FILE: ${{ inputs.answers-file }}
+        run: |
+          # The answers file is named relative to the repository; make it
+          # absolute before leaving the checkout, so a relative path keeps
+          # pointing at the tracked fixture.
+          case "$ANSWERS_FILE" in
+            "") ;;
+            /*) export NIVUUS_ANSWERS_FILE="$ANSWERS_FILE" ;;
+            *)  export NIVUUS_ANSWERS_FILE="$GITHUB_WORKSPACE/$ANSWERS_FILE" ;;
+          esac
+          cd /tmp/export
+          "$GITHUB_WORKSPACE/.nivuus-socle/scripts/check-idempotence.sh" "$PACKAGE_DIR"
 
       - name: Attach the native artifact
         if: steps.version.outputs.release == 'yes' && inputs.artifact-glob != ''

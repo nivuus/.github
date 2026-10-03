@@ -103,7 +103,8 @@ functional_run_lines() {
 # names NIVUUS_ANSWERS_FILE, so deleting the actual env: line used to pass
 # this check (round-1 review).
 @test "passes the answers file via NIVUUS_ANSWERS_FILE" {
-    grep -qE 'NIVUUS_ANSWERS_FILE:[[:space:]]*\$\{\{[[:space:]]*inputs\.answers-file[[:space:]]*\}\}' "$WF"
+    grep -qE 'ANSWERS_FILE:[[:space:]]*\$\{\{[[:space:]]*inputs\.answers-file[[:space:]]*\}\}' "$WF"
+    functional_run_lines "$WF" | grep -qF 'export NIVUUS_ANSWERS_FILE='
 }
 
 @test "installs what the harness imports" {
@@ -333,14 +334,34 @@ functional_run_lines() {
     sed -n "${archive_line},\$p" "$WF" | grep -qF 'tar -czf "release-assets/${name}-${VERSION}.tar.gz" -C /tmp/export .'
 }
 
-# A package can only prove its install hook against build outputs that
-# already exist: the build has to run before the gate, not only before the
-# export-and-stamp step.
-@test "runs the build before the idempotence gate" {
-    run grep -n "name: Build the native artifact\|name: Prove the install hook is idempotent" "$WF"
+# The checkout is not what gets published. A bundle command that copies a
+# required output to the wrong place leaves a hook that passes on the
+# checkout and an archive that cannot install (review of #23): the gate
+# must run against the exported tree, after the bundle and the stamp.
+@test "proves the install hook against the exported tree, after bundle and stamp" {
+    run grep -n "name: Stamp the version into the export and archive it\|name: Prove the install hook is idempotent" "$WF"
     [ "$status" -eq 0 ]
-    local build_line gate_line
-    build_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    local archive_line gate_line
+    archive_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
     gate_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
-    [ "$build_line" -lt "$gate_line" ]
+    [ "$archive_line" -lt "$gate_line" ]
+    sed -n "${gate_line},\$p" "$WF" | grep -qE '^[[:space:]]+cd /tmp/export$'
+    sed -n "${gate_line},\$p" "$WF" | grep -qF 'check-idempotence.sh" "$PACKAGE_DIR"'
+}
+
+# The gate has to fail before anything reaches the release: the archive is
+# written by then, but publication must still be downstream of the proof.
+@test "the idempotence gate runs before the release is published" {
+    run grep -n "name: Prove the install hook is idempotent\|name: Publish the release" "$WF"
+    [ "$status" -eq 0 ]
+    local gate_line publish_line
+    gate_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    publish_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
+    [ "$gate_line" -lt "$publish_line" ]
+}
+
+# Leaving the checkout for /tmp/export must not break a relative answers
+# file: it is made absolute against the workspace first.
+@test "resolves a relative answers file against the workspace before changing directory" {
+    functional_run_lines "$WF" | grep -qF 'NIVUUS_ANSWERS_FILE="$GITHUB_WORKSPACE/$ANSWERS_FILE"'
 }
