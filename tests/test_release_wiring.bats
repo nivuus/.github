@@ -365,3 +365,20 @@ functional_run_lines() {
 @test "resolves a relative answers file against the workspace before changing directory" {
     functional_run_lines "$WF" | grep -qF 'NIVUUS_ANSWERS_FILE="$GITHUB_WORKSPACE/$ANSWERS_FILE"'
 }
+
+# The runner's Node is not the package's: ubuntu-latest shipped 22 while
+# desk's engines.node required 24, npm warned EBADENGINE at the build, and
+# the gate refused the archive it had just built (2026-10-03). A package
+# names its Node; the workflow sets it up before anything runs it.
+@test "exposes a node-version knob, set up before the build" {
+    grep -q "node-version:" "$WF"
+    run grep -n "name: Set up the package's Node.js\|name: Build the native artifact" "$WF"
+    [ "$status" -eq 0 ]
+    local setup_line build_line
+    setup_line="$(sed -n '1p' <<< "$output" | cut -d: -f1)"
+    build_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
+    [ "$setup_line" -lt "$build_line" ]
+    sed -n "${setup_line},+4p" "$WF" | grep -qF "inputs.node-version != ''"
+    sed -n "${setup_line},+4p" "$WF" | grep -qF "actions/setup-node@v4"
+    sed -n "${setup_line},+4p" "$WF" | grep -qE 'node-version:[[:space:]]*\$\{\{[[:space:]]*inputs\.node-version[[:space:]]*\}\}'
+}
