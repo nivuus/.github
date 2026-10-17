@@ -12,3 +12,12 @@ jobs:
       socle-ref: ${{ github.sha }}
   security:
     uses: ./.github/workflows/security.yml
+  # Dependabot opens pull requests here too. The job skips itself on any
+  # other author, and on push, where there is no pull request.
+  dependabot-auto-merge:
+    uses: ./.github/workflows/dependabot-auto-merge.yml
+    permissions:
+      contents: write
+      pull-requests: write
+    with:
+      socle-ref: ${{ github.sha }}
