@@ -29,7 +29,7 @@ jobs:
     name: Enable auto-merge
     # The pull request AUTHOR, not github.actor: the actor is whoever caused
     # this run (a human re-running it, a rebase), while the author says whose
-    # changes these are. fetch-metadata verifies the commits as well.
+    # changes these are. The commits themselves are checked below.
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     # The calling job must grant both, or GitHub refuses to start the run.
@@ -38,11 +38,7 @@ jobs:
       pull-requests: write
     steps:
       # Nothing from the pull request is ever checked out or run here: this
-      # job holds a write token.
-      - name: Fetch the Dependabot metadata
-        id: metadata
-        uses: dependabot/fetch-metadata@v3
-
+      # job holds a write token. The socle is ours, not the pull request's.
       - name: Check out the shared socle
         uses: actions/checkout@v7
         with:
@@ -51,8 +47,41 @@ jobs:
           path: .nivuus-socle
           persist-credentials: false
 
+      # fetch-metadata fails its step on a branch someone else rewrote (an
+      # unsigned `gh pr update-branch --rebase`, a fix commit pushed on top).
+      # Its verification stays on - such a branch must never auto-merge - but
+      # that case is a review, not a failure, so it is told apart first. The
+      # check is stricter than fetch-metadata's, so a branch passing it is never
+      # refused afterwards. A failed API call still fails the job.
+      - name: Check that only Dependabot wrote the branch
+        id: commits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          commits="$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits")"
+          set +e
+          .nivuus-socle/scripts/dependabot-commits.sh <<< "$commits"
+          status=$?
+          set -e
+          # Same contract as the decision below: 3 is a review, anything else
+          # non-zero is a broken input.
+          case "$status" in
+            0) echo "dependabot-only=yes" >> "$GITHUB_OUTPUT" ;;
+            3) echo "Branch modified by someone other than Dependabot: left for human review."
+               echo "dependabot-only=no" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+      - name: Fetch the Dependabot metadata
+        id: metadata
+        if: steps.commits.outputs.dependabot-only == 'yes'
+        uses: dependabot/fetch-metadata@v3
+
       - name: Judge every updated dependency
         id: decision
+        if: steps.commits.outputs.dependabot-only == 'yes'
         env:
           DEPENDENCIES: ${{ steps.metadata.outputs.updated-dependencies-json }}
           ALLOWED_UPDATE_TYPES: ${{ inputs.allowed-update-types }}
