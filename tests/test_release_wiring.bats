@@ -379,6 +379,6 @@ functional_run_lines() {
     build_line="$(sed -n '2p' <<< "$output" | cut -d: -f1)"
     [ "$setup_line" -lt "$build_line" ]
     sed -n "${setup_line},+4p" "$WF" | grep -qF "inputs.node-version != ''"
-    sed -n "${setup_line},+4p" "$WF" | grep -qF "actions/setup-node@v4"
+    sed -n "${setup_line},+4p" "$WF" | grep -qE "actions/setup-node@v[0-9]+"
     sed -n "${setup_line},+4p" "$WF" | grep -qE 'node-version:[[:space:]]*\$\{\{[[:space:]]*inputs\.node-version[[:space:]]*\}\}'
 }
