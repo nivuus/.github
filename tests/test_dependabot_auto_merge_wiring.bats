@@ -31,6 +31,30 @@ setup() {
     grep -qE "uses: dependabot/fetch-metadata@" "$WF"
 }
 
+# A branch a human rewrote is a review, not a failure: it is told apart
+# before fetch-metadata, which would otherwise fail its step on it.
+@test "checks every commit of the branch before fetch-metadata runs" {
+    grep -qF 'gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/commits"' "$WF"
+    grep -q "dependabot-commits.sh" "$WF"
+    check_line="$(grep -n "dependabot-commits.sh" "$WF" | head -1 | cut -d: -f1)"
+    metadata_line="$(grep -n "uses: dependabot/fetch-metadata@" "$WF" | cut -d: -f1)"
+    [ "$check_line" -lt "$metadata_line" ]
+}
+
+@test "a modified branch is logged as left for human review" {
+    grep -qF "Branch modified by someone other than Dependabot: left for human review." "$WF"
+}
+
+@test "fetch-metadata and the decision run only on a branch only Dependabot wrote" {
+    [ "$(grep -cF "if: steps.commits.outputs.dependabot-only == 'yes'" "$WF")" -eq 2 ]
+}
+
+# A pull request with commits that are not Dependabot's must never merge alone.
+@test "keeps fetch-metadata's own verification on" {
+    run grep -qE "skip-(commit-)?verification" "$WF"
+    [ "$status" -ne 0 ]
+}
+
 # The scalar previous-version output describes the first dependency only; a
 # grouped pull request must be judged dependency by dependency.
 @test "judges every dependency from the full json, not the scalar outputs" {
@@ -45,8 +69,8 @@ setup() {
 }
 
 @test "only a needs-review verdict is a clean skip; other failures fail the job" {
-    grep -qE '^ +3\)' "$WF"
-    grep -qE '^ +\*\) exit "\$status"' "$WF"
+    [ "$(grep -cE '^ +3\)' "$WF")" -eq 2 ]
+    [ "$(grep -cE '^ +\*\) exit "\$status"' "$WF")" -eq 2 ]
 }
 
 @test "enables auto-merge rather than merging directly" {

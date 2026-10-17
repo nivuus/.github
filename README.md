@@ -118,6 +118,12 @@ l'exécution entière finit en `startup_failure` :
 Le job se saute de lui-même sur tout autre auteur que `dependabot[bot]`, et sur
 un push.
 
+Une branche Dependabot réécrite par quelqu'un d'autre (un `gh pr update-branch
+--rebase`, qui recrée les commits sans signature, ou un commit de correction
+poussé dessus) n'est jamais fusionnée seule : le job passe au vert et la laisse
+à une revue humaine, en le disant dans son journal. Pour garder l'auto-merge,
+commenter `@dependabot rebase` plutôt que de mettre la branche à jour soi-même.
+
 Le réglage **Allow auto-merge** du dépôt (Settings → General → Pull Requests)
 doit être activé. Sinon `gh pr merge --auto` échoue et le job passe au rouge :
 c'est voulu, plutôt qu'une pull request qui attend sans dire pourquoi.
