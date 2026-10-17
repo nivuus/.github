@@ -21,3 +21,11 @@ setup() {
 @test "socle runs its checks against its own commit" {
     grep -q 'socle-ref: ${{ github.sha }}' "$WF"
 }
+
+# Dependabot opens pull requests on the socle as well. Enabling auto-merge
+# needs both write scopes, granted by the calling job.
+@test "socle auto-merges its own dependabot pull requests" {
+    grep -q "uses: ./.github/workflows/dependabot-auto-merge.yml" "$WF"
+    grep -A4 "dependabot-auto-merge.yml" "$WF" | grep -q "contents: write"
+    grep -A4 "dependabot-auto-merge.yml" "$WF" | grep -q "pull-requests: write"
+}

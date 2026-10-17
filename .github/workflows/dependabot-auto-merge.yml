@@ -1,0 +1,81 @@
+name: Dependabot auto-merge
+
+# Enables GitHub auto-merge on qualifying Dependabot pull requests, so they
+# merge themselves once branch protection is satisfied. This job never merges
+# anything directly: the required checks still decide, it only removes the
+# human click for updates nobody would review anyway.
+#
+# The approach is GitHub's own ("Automating Dependabot with GitHub Actions"):
+# dependabot/fetch-metadata, then `gh pr merge --auto` with GITHUB_TOKEN.
+
+on:
+  workflow_call:
+    inputs:
+      allowed-update-types:
+        description: >-
+          Update types that may merge without review, separated by spaces or
+          commas, among semver-patch, semver-minor and semver-major. Whatever
+          is listed here, a dependency still on 0.x only ever auto-merges a
+          patch.
+        type: string
+        default: "semver-patch semver-minor"
+      socle-ref:
+        description: Ref of nivuus/.github to take the decision script from
+        type: string
+        default: main
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    # The pull request AUTHOR, not github.actor: the actor is whoever caused
+    # this run (a human re-running it, a rebase), while the author says whose
+    # changes these are. fetch-metadata verifies the commits as well.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    # The calling job must grant both, or GitHub refuses to start the run.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Nothing from the pull request is ever checked out or run here: this
+      # job holds a write token.
+      - name: Fetch the Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Check out the shared socle
+        uses: actions/checkout@v7
+        with:
+          repository: nivuus/.github
+          ref: ${{ inputs.socle-ref }}
+          path: .nivuus-socle
+          persist-credentials: false
+
+      - name: Judge every updated dependency
+        id: decision
+        env:
+          DEPENDENCIES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+          ALLOWED_UPDATE_TYPES: ${{ inputs.allowed-update-types }}
+        run: |
+          set +e
+          .nivuus-socle/scripts/dependabot-decision.sh <<< "$DEPENDENCIES"
+          status=$?
+          set -e
+          # 3 means a human must review: a normal outcome, not a failure.
+          # Anything else non-zero is a broken input and must fail the job.
+          case "$status" in
+            0) echo "merge=yes" >> "$GITHUB_OUTPUT" ;;
+            3) echo "Left for human review."
+               echo "merge=no" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+      # Fails when the repository has "Allow auto-merge" turned off. That
+      # failure is wanted: a silently skipped merge would leave the pull
+      # request waiting with nothing saying why.
+      - name: Enable auto-merge
+        if: steps.decision.outputs.merge == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

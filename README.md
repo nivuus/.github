@@ -57,11 +57,12 @@ Chacun s'ajoute au besoin, avec des entrées toutes optionnelles.
 | `ci-rust.yml` | fmt, clippy, test | `manifest-path` |
 | `ci-node.yml` | scripts npm définis | `node-version`, `working-directory`, `scripts` |
 | `codeql.yml` | analyse sémantique | `languages` (**obligatoire**) |
+| `dependabot-auto-merge.yml` | auto-merge des mises à jour Dependabot sans risque | `allowed-update-types` |
 
 ## CodeQL exige une permission de l'appelant
 
-Parmi les workflows réutilisables de ce dépôt, `codeql.yml` est le seul qui
-exige que le dépôt appelant lui accorde des permissions : il lui faut
+`codeql.yml` exige que le dépôt appelant lui accorde des permissions — comme
+`dependabot-auto-merge.yml`, voir plus bas : il lui faut
 `security-events: write` pour publier ses résultats, `actions: read` et
 `contents: read`, et un workflow appelé ne peut jamais détenir plus de droits
 que celui qui l'appelle. Sans ce bloc, GitHub ne se contente pas de faire
@@ -87,6 +88,45 @@ sans tests ou sans le script npm attendu ne sera pas mis en échec pour autant.
 
 `security.yml` accepte aussi `python-version`, pour un dépôt dont le manifeste
 exige un interpréteur particulier.
+
+## Auto-merge des pull requests Dependabot
+
+`dependabot-auto-merge.yml` active l'auto-merge de GitHub sur les pull requests
+ouvertes par Dependabot : elles se fusionnent seules, en squash, dès que les
+checks exigés par la protection de branche passent. Le workflow ne fusionne
+jamais directement ; ce sont toujours les checks qui décident.
+
+Passent sans revue les mises à jour patch et mineures, jamais une majeure. Pour
+une dépendance encore en 0.x, seuls les patchs passent : sous 1.0, une mineure
+a le droit de casser l'API (str0m 0.21 → 0.24). Une pull request groupée est
+jugée dépendance par dépendance et la plus stricte décide : une seule majeure
+dans le groupe, et tout attend une revue humaine. L'entrée
+`allowed-update-types` (`semver-patch`, `semver-minor`, `semver-major`) resserre
+ou élargit la liste, sans jamais lever la règle des 0.x.
+
+Comme pour CodeQL, le job appelant doit accorder les permissions, faute de quoi
+l'exécution entière finit en `startup_failure` :
+
+```yaml
+  dependabot-auto-merge:
+    uses: nivuus/.github/.github/workflows/dependabot-auto-merge.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+```
+
+Le job se saute de lui-même sur tout autre auteur que `dependabot[bot]`, et sur
+un push.
+
+Le réglage **Allow auto-merge** du dépôt (Settings → General → Pull Requests)
+doit être activé. Sinon `gh pr merge --auto` échoue et le job passe au rouge :
+c'est voulu, plutôt qu'une pull request qui attend sans dire pourquoi.
+
+Une fusion faite par l'auto-merge activé avec le `GITHUB_TOKEN` ne déclenche
+aucun workflow `push` : ni la CI sur `main`, ni `release.yml`. Sans effet sur
+les versions, puisque Dependabot préfixe ses commits `ci` ou `chore`, que
+`derive-version.sh` ne publie jamais : la mise à jour part avec la prochaine
+release `feat` ou `fix`.
 
 ### Les trois règles
 
